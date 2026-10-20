@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Диск — локальный прокси</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-icon">Д</span>
+        <div>Диск<span class="brand-sub">ЛОКАЛЬНЫЙ ПРОКСИ</span></div>
+      </div>
+      <div class="nav-title">РАБОЧАЯ ОБЛАСТЬ</div>
+      <button class="nav active" data-filter="pending">
+        <span>▤</span> Очередь загрузки <b id="nav-count">—</b></button
+      ><button class="nav" data-filter="errors">
+        <span>!</span> Ошибки 500</button
+      ><button class="nav" data-filter="deferred">
+        <span>Ⅱ</span> Отложенные</button
+      ><button class="nav" data-filter="downloaded">
+        <span>↓</span> Новые загрузки <b id="nav-downloaded">—</b></button
+      ><button class="nav" data-filter="local">
+        <span>✓</span> На компьютере</button
+      ><button class="nav" data-filter="all">
+        <span>▦</span> Все отмеченные
+      </button>
+      <div class="sidebar-bottom">
+        <span class="local-dot"></span> Только этот компьютер
+        <p>127.0.0.1 · без повторного входа</p>
+        <div class="sidebar-note">
+          Прокси используется только процессом Яндекс Диска.
+        </div>
+      </div>
+    </aside>
+    <main>
+      <header>
+        <div>
+          <div class="eyebrow">ЯНДЕКС ДИСК / MITM</div>
+          <h1>Загрузка без догадок<span class="heading-dot">.</span></h1>
+          <p class="intro">
+            Следите за реальными загрузками и временно откладывайте недоступные
+            файлы.
+          </p>
+        </div>
+        <div class="header-actions">
+          <span id="connection" class="connection">Подключение к панели…</span
+          ><button id="settings" class="button">Настройка</button
+          ><span class="version">0.1 · ЭКСПЕРИМЕНТАЛЬНО</span>
+        </div>
+      </header>
+      <section class="session-bar">
+        <div class="session-info">
+          <span id="session-led" class="session-led"></span>
+          <div>
+            <strong id="session-title">MITM остановлен</strong
+            ><span id="session-subtitle"
+              >Клиент подключается к Яндексу напрямую</span
+            >
+          </div>
+        </div>
+        <div class="session-controls">
+          <label for="mode">При ошибке 500</label
+          ><select id="mode">
+            <option value="defer">Отложить файл через Windows</option>
+            <option value="cooldown">Только ограничить повторы</option>
+            <option value="observe">Наблюдать</option></select
+          ><button id="start" class="button primary">▶ Запустить MITM</button
+          ><button id="stop" class="button stop" disabled>
+            ■ Остановить и восстановить
+          </button>
+        </div>
+      </section>
+      <div id="notice" class="notice">
+        <span class="info-icon">i</span>
+        <div>
+          <strong id="notice-summary"
+            >После первого ответа 500 файл временно откладывается.</strong
+          ><span
+            >При остановке сеанса исходные отметки хранения восстанавливаются.
+            Частично скачанные и изменённые файлы автоматически не
+            откладываются.</span
+          >
+        </div>
+      </div>
+      <section class="metrics">
+        <article>
+          <span>ЕЩЁ НЕ НА ПК</span><strong id="metric-pending">—</strong
+          ><small id="metric-size">Считывание списка</small>
+        </article>
+        <article>
+          <span>НОВЫЕ ЗАГРУЗКИ</span><strong id="metric-downloaded">—</strong
+          ><small id="metric-downloaded-size">Подтверждено Windows</small
+          ><small id="metric-local">Всего на ПК: —</small>
+        </article>
+        <article class="metric-error">
+          <span>ОТВЕТЫ 500</span><strong id="metric-errors">0</strong
+          ><small>ответы Яндекса за запуск панели</small>
+        </article>
+        <article class="metric-deferred">
+          <span>ОТЛОЖЕНО</span><strong id="metric-deferred">0</strong
+          ><small>временно снята отметка хранения</small>
+        </article>
+        <article>
+          <span>ПЕРЕДАНО ПО СЕТИ</span><strong id="metric-network">0 Б</strong
+          ><small>учтённые потоки, включая повторы</small>
+        </article>
+      </section>
+      <div class="workspace">
+        <section class="file-panel">
+          <div class="table-head">
+            <div>
+              <h2 id="list-title">Очередь загрузки</h2>
+              <p id="list-description">
+                Только файлы, отмеченные для хранения на ПК
+              </p>
+            </div>
+            <div class="table-tools">
+              <label class="search"
+                ><span>⌕</span
+                ><input
+                  id="search"
+                  type="search"
+                  placeholder="Имя файла или часть пути"
+                  aria-label="Найти файл" /></label
+              ><select id="filter" aria-label="Фильтр файлов">
+                <option value="pending">Не скачаны</option>
+                <option value="errors">Были ошибки 500</option>
+                <option value="deferred">Отложенные</option>
+                <option value="downloaded">Новые загрузки</option>
+                <option value="local">На ПК</option>
+                <option value="all">Все отмеченные</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Файл</th>
+                  <th>Состояние</th>
+                  <th>HTTP</th>
+                  <th class="num">Попытки</th>
+                  <th>На ПК / размер</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="files"></tbody>
+            </table>
+            <div id="empty" class="empty" hidden>Здесь пока нет файлов</div>
+          </div>
+          <footer class="table-footer">
+            <span id="pagination-label">—</span>
+            <div>
+              <button
+                id="prev"
+                class="icon-button"
+                aria-label="Предыдущая страница"
+              >
+                ←</button
+              ><button
+                id="next"
+                class="icon-button"
+                aria-label="Следующая страница"
+              >
+                →
+              </button>
+            </div>
+          </footer>
+        </section>
+        <aside class="activity-panel">
+          <div class="activity-heading">
+            <h2>Живой журнал</h2>
+            <span class="live-dot"></span>
+          </div>
+          <p class="muted">События этого запуска панели</p>
+          <div id="events" class="events"></div>
+          <div class="protection">
+            <span>⌁</span>
+            <div>
+              <strong>Доступ остаётся локальным</strong>
+              <p>
+                Токены, cookies и содержимое файлов не сохраняются. Пути файлов
+                остаются в локальном журнале.
+              </p>
+            </div>
+          </div>
+        </aside>
+      </div>
+      <footer class="page-footer">
+        <span id="root-path">Папка синхронизации</span
+        ><span id="cleanup"
+          >Без таймера. Остановка возвращает прямое подключение.</span
+        >
+      </footer>
+    </main>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <dialog id="details">
+      <form method="dialog">
+        <button class="dialog-close" aria-label="Закрыть">×</button>
+      </form>
+      <div class="eyebrow">ДАННЫЕ ФАЙЛА</div>
+      <h2 id="detail-name"></h2>
+      <p id="detail-path" class="detail-path"></p>
+      <dl id="detail-values"></dl>
+      <p class="detail-note">
+        Байты в сети могут повторяться. Факт сохранения на ПК проверяется
+        отдельно через Windows Cloud Files.
+      </p>
+    </dialog>
+    <dialog id="setup-dialog">
+      <form id="setup-form">
+        <div class="eyebrow">ПОДКЛЮЧЕНИЕ ПРИЛОЖЕНИЯ</div>
+        <h2>Настройка Яндекс Диска</h2>
+        <p class="dialog-intro">
+          Выберите установленное приложение и его папку синхронизации. Новый
+          вход в аккаунт не нужен.
+        </p>
+        <label class="field"
+          >Папка синхронизации<input
+            id="setup-root"
+            list="root-options"
+            required
+            placeholder="Путь к папке Яндекс Диска" /><datalist
+            id="root-options"
+          ></datalist></label
+        ><label class="field"
+          >Приложение Яндекс Диск<input
+            id="setup-client"
+            required
+            placeholder="Полный путь к YandexDisk4.exe"
+        /></label>
+        <p class="detail-note">
+          Учитываются только файлы с отметкой «Хранить на компьютере». Другие
+          папки автоматически не скачиваются.
+        </p>
+        <div class="dialog-actions">
+          <button type="button" id="setup-cancel" class="button">Отмена</button
+          ><button class="button primary" type="submit">
+            Сохранить настройку
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="consent-dialog">
+      <div class="eyebrow">ПЕРЕД ВКЛЮЧЕНИЕМ ПРОКСИ</div>
+      <h2>Временное доверие HTTPS</h2>
+      <p class="dialog-intro">
+        Прокси перезапустит Яндекс Диск и добавит свой корневой сертификат в
+        хранилище текущего пользователя Windows. Пока он установлен, доверие
+        HTTPS меняется для приложений этого пользователя.
+      </p>
+      <p class="dialog-intro">
+        Через прокси направляется только процесс Яндекс Диска. При остановке
+        сертификат удаляется, исходные отметки хранения возвращаются, приложение
+        запускается напрямую.
+      </p>
+      <div class="certificate">
+        <span>Отпечаток сертификата этого ПК · SHA-1</span
+        ><code id="certificate-thumbprint"></code>
+      </div>
+      <label class="consent-check"
+        ><input id="consent-checkbox" type="checkbox" />Я понимаю изменение
+        доверия HTTPS и хочу включить локальный прокси.</label
+      >
+      <div class="dialog-actions">
+        <button id="consent-cancel" class="button">Отмена</button
+        ><button id="consent-start" class="button primary" disabled>
+          Включить прокси
+        </button>
+      </div>
+    </dialog>
+    <script src="/app.js"></script>
+  </body>
+</html>

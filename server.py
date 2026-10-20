@@ -1,0 +1,740 @@
+"""Loopback-only panel. Start.cmd opens both this backend and its frontend."""
+
+import argparse
+import collections
+import hashlib
+import hmac
+import json
+import os
+import secrets
+import subprocess
+import sys
+import threading
+import time
+import urllib.parse
+import urllib.request
+import uuid
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+import settings
+import winops
+from downloads import History
+from winops import (
+    APP,
+    CLIENT,
+    NO_WINDOW,
+    ROOT,
+    THUMB,
+    atomic,
+    can_defer,
+    info,
+    process_image,
+    recover_session,
+)
+
+sys.stdout.reconfigure(encoding="utf-8")
+PORT = 18765
+URL = f"http://127.0.0.1:{PORT}"
+RUNTIME = settings.RUNTIME
+KEY = secrets.token_urlsafe(32)
+NONCE = secrets.token_urlsafe(24)
+ACTIVE = None
+
+
+def stamp():
+    return time.strftime("%H:%M:%S")
+
+
+def file_id(path):
+    return hashlib.sha256(path.encode("utf-8")).hexdigest()[:20]
+
+
+def history_path():
+    return RUNTIME / "history" / (file_id(str(ROOT or "unconfigured")) + ".json")
+
+
+class Model:
+    def __init__(self):
+        self.lock = threading.RLock()
+        self.files = {}
+        self.events = collections.deque(maxlen=400)
+        self.sequence = 0
+        self.mode = settings.read().get("mode", "defer")
+        self.threshold = 1
+        self.cooldown = 300
+        self.worker = None
+        self.directory = None
+        self.control = {}
+        self.closed = False
+        self.counters = collections.Counter()
+        self.seen_http = collections.OrderedDict()
+        self.latest_cleanup = None
+        self.reported_stop = None
+        self.downloads = History(history_path())
+        self.refresh_inventory()
+
+    def refresh_inventory(self):
+        if ROOT is None or not ROOT.is_dir():
+            return
+        rows = []
+        for parent, dirs, names in os.walk(ROOT):
+            dirs[:] = [name for name in dirs if name != ".sync"]
+            for name in names:
+                try:
+                    p = Path(parent) / name
+                    s = p.stat()
+                    a = s.st_file_attributes
+                    if a & 0x80000:
+                        rel = p.relative_to(ROOT).as_posix()
+                        rows.append(
+                            {
+                                "id": file_id(rel),
+                                "path": rel,
+                                "name": name,
+                                "size": s.st_size,
+                                "status": "waiting" if a & 0x400000 else "local",
+                                "validated": 0 if a & 0x400000 else s.st_size,
+                                "on_disk": 0 if a & 0x400000 else s.st_size,
+                                "attempts": 0,
+                                "http500": 0,
+                                "consecutive_500": 0,
+                                "network_bytes": 0,
+                                "blocked": 0,
+                                "last_http": None,
+                                "api_http": None,
+                                "download_http": None,
+                                "last_host": None,
+                                "last_time": None,
+                                "cooldown_until": 0,
+                            }
+                        )
+                except OSError:
+                    pass
+        with self.lock:
+            for row in rows:
+                self.files.setdefault(row["path"], row)
+                if row["status"] != "local" or row["path"] in self.downloads.pending:
+                    try:
+                        metadata = info(row["path"])
+                        if row["status"] == "local":
+                            if self.downloads.complete_if_pending(row["path"], metadata):
+                                self.log(
+                                    "local",
+                                    "Windows подтвердила загрузку между запусками панели",
+                                    row["path"],
+                                )
+                        else:
+                            self.downloads.remember_pending(row["path"], metadata)
+                    except (OSError, ValueError):
+                        pass
+            self.downloads.save()
+        self.log("inventory", f"Список готов: {len(rows)} файлов отмечены для хранения на ПК")
+
+    def log(self, kind, message, file=None):
+        row = {
+            "id": uuid.uuid4().hex[:12],
+            "time": stamp(),
+            "event": kind,
+            "message": message,
+        }
+        if file:
+            row["file"] = file
+        self.events.appendleft(row)
+        with (RUNTIME / "events.jsonl").open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(row, ensure_ascii=False) + "\n")
+        if kind in (
+            "http500",
+            "deferred",
+            "session_active",
+            "session_stopped",
+            "session_error",
+            "pin_error",
+        ):
+            print(
+                f"[{row['time']}] {message}" + (" | " + file if file else ""),
+                flush=True,
+            )
+
+    def session(self):
+        if not self.directory:
+            return {"phase": "idle"}
+        try:
+            return json.loads((self.directory / "session.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {"phase": "starting"}
+
+    def save_control(self):
+        if self.directory:
+            atomic(self.directory / "control.json", self.control)
+
+    def start(self):
+        with self.lock:
+            if ROOT is not None and CLIENT is not None:
+                settings.validate(str(ROOT), str(CLIENT))
+            if ROOT is None or CLIENT is None:
+                raise ValueError("Сначала настройте папку синхронизации и путь к приложению")
+            if settings.read().get("consented_thumbprint") != THUMB:
+                raise ValueError("Подтвердите временное доверие сертификату в панели")
+            if self.worker is not None and self.worker.poll() is None:
+                raise ValueError("Сеанс уже работает")
+            previous = self.session()
+            if previous.get("phase") == "cleanup_required":
+                previous = recover_session(self.directory)
+                if previous.get("phase") != "stopped":
+                    raise ValueError("Не удалось восстановить предыдущий сеанс")
+            self.directory = RUNTIME / "sessions" / uuid.uuid4().hex
+            self.directory.mkdir(parents=True)
+            self.control = {"stop": False, "commands": []}
+            self.save_control()
+            env = os.environ.copy()
+            env.update(YDM_PANEL_KEY=KEY, YDM_PANEL_URL=URL)
+            self.worker = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(APP / "session.py"),
+                    str(self.directory),
+                    str(os.getpid()),
+                ],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=NO_WINDOW,
+            )
+            settings.preference(enabled=True)
+            self.log("session_starting", "Запускается MITM до ручной остановки")
+
+    def stop(self):
+        with self.lock:
+            settings.preference(enabled=False)
+            self.control["stop"] = True
+            self.save_control()
+            self.log("stop_requested", "Остановка и восстановление обычного клиента")
+
+    def command(self, action, rel):
+        if rel not in self.files:
+            raise ValueError("Файла нет в списке хранения на ПК")
+        if self.session().get("phase") != "active":
+            raise ValueError("MITM-сеанс не запущен")
+        if action == "defer":
+            s = info(rel)
+            if not can_defer(s):
+                raise ValueError(
+                    "Можно отложить только полностью нескачанный файл без локальных изменений"
+                )
+        self.sequence += 1
+        self.control["commands"].append({"seq": self.sequence, "action": action, "file": rel})
+        self.save_control()
+        if action == "defer":
+            self.files[rel]["status"] = "deferring"
+        else:
+            self.files[rel]["cooldown_until"] = 0
+            self.files[rel]["consecutive_500"] = 0
+
+    def event(self, event):
+        with self.lock:
+            kind = event.get("event")
+            rel = event.get("file")
+            row = self.files.get(rel)
+            if rel and row is None:
+                self.counters["unmatched"] += 1
+                return
+            if kind == "api_health":
+                self.counters["api_success"] += 1
+            elif kind == "tls_error":
+                self.counters["tls_errors"] += 1
+                self.log(
+                    "tls_error",
+                    "TLS-соединение отклонено: проверьте доверие сертификату",
+                )
+            elif kind == "attempt":
+                row["attempts"] += 1
+                row["last_time"] = stamp()
+                row["status"] = "requesting" if row["status"] != "deferred" else row["status"]
+            elif kind == "bytes":
+                count = event.get("bytes", 0)
+                if isinstance(count, int) and 0 <= count <= 1024**3:
+                    row["network_bytes"] += count
+                    self.counters["network_bytes"] += count
+                if row["status"] not in ("deferred", "deferring", "local"):
+                    row["status"] = "downloading"
+            elif kind == "http":
+                identity = event.get("flow")
+                if identity in self.seen_http:
+                    return
+                self.seen_http[identity] = True
+                if len(self.seen_http) > 30000:
+                    self.seen_http.popitem(last=False)
+                code = event.get("status")
+                row["last_http"] = code
+                row["last_host"] = event.get("host")
+                row["last_time"] = stamp()
+                row[
+                    "api_http" if event.get("host") == "cloud-api.yandex.net" else "download_http"
+                ] = code
+                if code == 500:
+                    row["http500"] += 1
+                    row["consecutive_500"] += 1
+                    self.counters["http500"] += 1
+                    if row["status"] not in ("local", "deferred", "deferring"):
+                        row["status"] = "http500"
+                    self.log("http500", "HTTP 500 от сервера Яндекса", rel)
+                    if (
+                        self.mode != "observe"
+                        and row["consecutive_500"] >= self.threshold
+                        and row["status"] != "local"
+                    ):
+                        row["cooldown_until"] = time.time() + self.cooldown
+                        if self.mode == "defer" and row["status"] not in (
+                            "deferred",
+                            "deferring",
+                        ):
+                            try:
+                                self.command("defer", rel)
+                            except (ValueError, OSError):
+                                self.log(
+                                    "pin_error",
+                                    "Автооткладывание не применено: состояние файла не подходит",
+                                    rel,
+                                )
+                elif code in (200, 206) and event.get("host") != "cloud-api.yandex.net":
+                    row["consecutive_500"] = 0
+            elif kind == "cooldown":
+                row["blocked"] += 1
+                self.counters["blocked"] += 1
+                row["last_delivered"] = 503
+                if row["status"] not in ("deferred", "deferring", "local"):
+                    row["status"] = "cooldown"
+            elif kind == "deferred":
+                row["status"] = "deferred"
+                row["cooldown_until"] = time.time() + self.cooldown
+                self.log("deferred", "Windows подтвердила временное откладывание файла", rel)
+            elif kind == "restored":
+                row["status"] = "waiting"
+                row["cooldown_until"] = 0
+                row["consecutive_500"] = 0
+                self.log("restored", "Исходная отметка хранения восстановлена", rel)
+            elif kind == "pin_error":
+                if row and row["status"] == "deferring":
+                    row["status"] = "http500"
+                self.log(
+                    "pin_error",
+                    "Изменение отметки не применено; файл оставлен в исходном состоянии",
+                    rel,
+                )
+            elif kind == "network_error":
+                reason = event.get("reason", "connection")
+                self.counters[reason] += 1
+                if reason != "client_cancelled" and row["status"] not in (
+                    "local",
+                    "deferred",
+                    "deferring",
+                    "http500",
+                ):
+                    row["status"] = "error"
+            elif kind in (
+                "ca_added",
+                "proxy_ready",
+                "session_active",
+                "session_error",
+                "session_stopped",
+                "client_direct",
+            ):
+                messages = {
+                    "ca_added": "Временный сертификат добавлен для текущего пользователя",
+                    "proxy_ready": "Прокси слушает только 127.0.0.1:18080",
+                    "session_active": "Диск запущен через MITM",
+                    "session_error": "Ошибка сеанса; выполняется восстановление",
+                    "client_direct": "Клиент возвращён к прямому подключению",
+                    "session_stopped": "MITM остановлен, выполнено восстановление",
+                }
+                if kind == "session_stopped":
+                    self.latest_cleanup = {
+                        "ca_removed": bool(event.get("ca_removed")),
+                        "restore_failures": event.get("restore_failures", 0),
+                    }
+                self.log(kind, messages[kind])
+
+    def policy(self):
+        with self.lock:
+            blocked = {}
+            if self.mode != "observe":
+                for rel, row in self.files.items():
+                    until = (
+                        time.time() + self.cooldown
+                        if row["status"] == "deferred"
+                        else row["cooldown_until"]
+                    )
+                    if until > time.time():
+                        blocked[rel] = until
+            return {"mode": self.mode, "blocked": blocked}
+
+    def monitor(self):
+        while not self.closed:
+            time.sleep(3)
+            try:
+                current = self.session()
+                if (
+                    self.worker
+                    and self.worker.poll() is not None
+                    and current.get("phase") not in ("idle", "stopped", "cleanup_required")
+                ):
+                    current = recover_session(self.directory)
+                if current.get("phase") in (
+                    "stopped",
+                    "cleanup_required",
+                ) and self.reported_stop != current.get("session"):
+                    self.reported_stop = current.get("session")
+                    with self.lock:
+                        self.latest_cleanup = {
+                            "ca_removed": current.get("ca_removed", False),
+                            "restore_failures": len(current.get("restore_failures", [])),
+                        }
+                        for row in self.files.values():
+                            if row["status"] in (
+                                "deferred",
+                                "deferring",
+                                "cooldown",
+                            ) and row["path"] not in current.get("restore_failures", []):
+                                row["status"] = "waiting"
+                                row["cooldown_until"] = 0
+                        self.log(
+                            "session_stopped",
+                            "Сеанс завершён. Сертификат и отметки проверены.",
+                        )
+            except (OSError, ValueError):
+                pass
+            with self.lock:
+                targets = [
+                    (p, r["status"]) for p, r in self.files.items() if r["status"] != "local"
+                ]
+            for rel, status in targets:
+                try:
+                    p = ROOT / rel
+                    s = p.stat()
+                    if not s.st_file_attributes & 0x400000 or status == "downloading":
+                        metadata = info(rel)
+                        with self.lock:
+                            row = self.files[rel]
+                            row["on_disk"] = metadata["on_disk"]
+                            row["validated"] = metadata["validated"]
+                            if metadata["validated"] >= row["size"] and metadata["modified"] == 0:
+                                was_deferred = row["status"] == "deferred"
+                                row["status"] = "local"
+                                row["cooldown_until"] = 0
+                                self.downloads.record(
+                                    rel,
+                                    metadata,
+                                    self.session().get("phase") == "active",
+                                )
+                                self.log(
+                                    "local",
+                                    "Файл полностью сохранён и подтверждён Windows",
+                                    rel,
+                                )
+                                if was_deferred and self.session().get("phase") == "active":
+                                    self.command("restore", rel)
+                except (OSError, ValueError):
+                    pass
+
+    def snapshot(self):
+        with self.lock:
+            counts = collections.Counter(row["status"] for row in self.files.values())
+            return {
+                "app": "disk-mitm-panel",
+                "version": 2,
+                "nonce": NONCE,
+                "root": str(ROOT) if ROOT else "",
+                "client": str(CLIENT) if CLIENT else "",
+                "configured": ROOT is not None and CLIENT is not None,
+                "root_candidates": [str(p) for p in settings.root_candidates()],
+                "mode": self.mode,
+                "threshold": self.threshold,
+                "cooldown": self.cooldown,
+                "session": self.session(),
+                "counts": dict(counts),
+                "total": len(self.files),
+                "pending": sum(1 for row in self.files.values() if row["status"] != "local"),
+                "pending_bytes": sum(
+                    row["size"] for row in self.files.values() if row["status"] != "local"
+                ),
+                "downloads": self.downloads.summary(),
+                "counters": dict(self.counters),
+                "events": list(self.events)[:30],
+                "cleanup": self.latest_cleanup,
+                "certificate_thumbprint": THUMB,
+            }
+
+    def selected_files(self, query):
+        search = query.get("q", [""])[0].casefold()
+        status = query.get("status", ["pending"])[0]
+        try:
+            offset = max(0, int(query.get("offset", ["0"])[0]))
+            limit = max(1, min(150, int(query.get("limit", ["60"])[0])))
+        except ValueError:
+            offset = 0
+            limit = 60
+        with self.lock:
+            rows = [
+                row.copy()
+                for row in self.files.values()
+                if search in row["path"].casefold()
+                and (
+                    status == "all"
+                    or status == "pending"
+                    and row["status"] != "local"
+                    or status == "errors"
+                    and row["http500"] > 0
+                    or status == "deferred"
+                    and row["status"] == "deferred"
+                    or status == "local"
+                    and row["status"] == "local"
+                    or status == "downloaded"
+                    and row["path"] in self.downloads.by_path
+                )
+            ]
+            for row in rows:
+                completion = self.downloads.by_path.get(row["path"])
+                if completion:
+                    row.update(
+                        downloaded_at=completion["confirmed_at"],
+                        downloaded_via_proxy=completion["via_proxy"],
+                    )
+            rank = {
+                "deferred": 0,
+                "deferring": 1,
+                "http500": 2,
+                "cooldown": 3,
+                "downloading": 4,
+                "requesting": 5,
+                "error": 6,
+                "waiting": 7,
+                "local": 8,
+            }
+            rows.sort(
+                key=lambda r: (
+                    rank.get(r["status"], 9),
+                    -r["http500"],
+                    r["path"].casefold(),
+                )
+            )
+            return {
+                "total": len(rows),
+                "offset": offset,
+                "rows": rows[offset : offset + limit],
+            }
+
+
+class Handler(BaseHTTPRequestHandler):
+    def handle(self):
+        try:
+            super().handle()
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            pass
+
+    def log_message(self, *args):
+        pass
+
+    def allowed(self):
+        return self.headers.get("Host") in (f"127.0.0.1:{PORT}", f"localhost:{PORT}")
+
+    def reply(self, code, value, kind="application/json; charset=utf-8"):
+        body = (
+            value
+            if isinstance(value, bytes)
+            else json.dumps(value, ensure_ascii=False).encode("utf-8")
+        )
+        self.send_response(code)
+        self.send_header("Content-Type", kind)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'",
+        )
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            pass
+
+    def internal(self):
+        return hmac.compare_digest(self.headers.get("X-Local-Key", ""), KEY)
+
+    def do_GET(self):
+        if not self.allowed():
+            self.reply(403, {"error": "Invalid local host"})
+            return
+        u = urllib.parse.urlsplit(self.path)
+        if u.path == "/internal/policy":
+            self.reply(200, ACTIVE.policy()) if self.internal() else self.reply(
+                403, {"error": "Forbidden"}
+            )
+            return
+        if u.path == "/api/state":
+            self.reply(200, ACTIVE.snapshot())
+            return
+        if u.path == "/api/files":
+            self.reply(200, ACTIVE.selected_files(urllib.parse.parse_qs(u.query)))
+            return
+        static = {
+            "/": ("index.html", "text/html; charset=utf-8"),
+            "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+            "/style.css": ("style.css", "text/css; charset=utf-8"),
+        }
+        if u.path in static:
+            name, kind = static[u.path]
+            self.reply(200, (APP / "dist" / name).read_bytes(), kind)
+        else:
+            self.reply(404, {"error": "Not found"})
+
+    def do_POST(self):
+        global ROOT, CLIENT
+        if not self.allowed():
+            self.reply(403, {"error": "Invalid local host"})
+            return
+        internal = self.path in ("/internal/event", "/internal/events")
+        if internal:
+            if not self.internal():
+                self.reply(403, {"error": "Forbidden"})
+                return
+        elif self.headers.get("Origin") != URL or not hmac.compare_digest(
+            self.headers.get("X-Panel-Nonce", ""), NONCE
+        ):
+            self.reply(403, {"error": "Local confirmation token is required"})
+            return
+        try:
+            size = int(self.headers.get("Content-Length", "0"))
+            if not 0 <= size <= 200000:
+                raise ValueError("Request too large")
+            data = json.loads(self.rfile.read(size) or b"{}")
+            if not internal and not isinstance(data, dict):
+                raise ValueError("Ожидался объект настроек")
+            if internal:
+                values = data if isinstance(data, list) else [data]
+                if len(values) > 250:
+                    raise ValueError("Too many events")
+                for event in values:
+                    if isinstance(event, dict):
+                        ACTIVE.event(event)
+            elif self.path == "/api/start":
+                if data.get("accepted_thumbprint") == THUMB:
+                    settings.preference(consented_thumbprint=THUMB)
+                ACTIVE.start()
+            elif self.path == "/api/setup":
+                with ACTIVE.lock:
+                    if ACTIVE.session().get("phase") not in ("idle", "stopped"):
+                        raise ValueError("Сначала остановите MITM и завершите восстановление")
+                    ROOT, CLIENT = settings.save(data.get("root", ""), data.get("client", ""))
+                    winops.ROOT, winops.CLIENT = ROOT, CLIENT
+                    ACTIVE.files = {}
+                    ACTIVE.downloads = History(history_path())
+                    ACTIVE.refresh_inventory()
+            elif self.path == "/api/stop":
+                ACTIVE.stop()
+            elif self.path == "/api/recover":
+                with ACTIVE.lock:
+                    if ACTIVE.session().get("phase") == "active":
+                        raise ValueError("Сначала остановите активный сеанс")
+                    if ACTIVE.directory:
+                        recover_session(ACTIVE.directory)
+            elif self.path == "/api/config":
+                mode = data.get("mode")
+                if mode not in ("observe", "cooldown", "defer"):
+                    raise ValueError("Unknown mode")
+                with ACTIVE.lock:
+                    ACTIVE.mode = mode
+                    settings.preference(mode=mode)
+                    ACTIVE.log(
+                        "mode",
+                        "Режим изменён: "
+                        + {
+                            "defer": "откладывание",
+                            "observe": "наблюдение",
+                            "cooldown": "ограничение повторов",
+                        }[mode],
+                    )
+            elif self.path in ("/api/defer", "/api/retry"):
+                with ACTIVE.lock:
+                    ACTIVE.command(
+                        "defer" if self.path.endswith("defer") else "restore",
+                        data.get("file", ""),
+                    )
+            elif self.path == "/api/shutdown":
+                ACTIVE.stop()
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
+            else:
+                self.reply(404, {"error": "Not found"})
+                return
+            self.reply(200, {"ok": True})
+        except (ValueError, TypeError, OSError) as exc:
+            self.reply(400, {"error": str(exc)[:180]})
+
+
+def main():
+    global ACTIVE
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--no-mitm", action="store_true")
+    parser.add_argument("--no-browser", action="store_true")
+    args = parser.parse_args()
+    try:
+        with urllib.request.urlopen(URL + "/api/state", timeout=0.7) as response:
+            existing = json.load(response)
+        if existing.get("app") == "disk-mitm-panel":
+            if not args.no_browser:
+                webbrowser.open(URL)
+            print("Панель уже запущена: " + URL, flush=True)
+            return 20
+    except Exception:
+        pass
+    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    unresolved = []
+    for saved in (RUNTIME / "sessions").glob("*/session.json"):
+        try:
+            previous = json.loads(saved.read_text(encoding="utf-8"))
+            if (
+                previous.get("phase") not in ("stopped",)
+                and process_image(previous.get("pid", 0)) is None
+            ):
+                previous = recover_session(saved.parent)
+                if previous.get("phase") != "stopped":
+                    unresolved.append(saved.parent)
+        except (OSError, ValueError):
+            print("Нужно проверить восстановление предыдущего сеанса.", flush=True)
+    ACTIVE = Model()
+    if unresolved:
+        ACTIVE.directory = unresolved[-1]
+    threading.Thread(target=ACTIVE.monitor, daemon=True).start()
+    print(
+        "\nЯНДЕКС ДИСК · ЛОКАЛЬНЫЙ MITM\n"
+        + URL
+        + "\nCtrl+C: остановить, убрать сертификат и восстановить клиент.\n",
+        flush=True,
+    )
+    if not args.no_browser:
+        webbrowser.open(URL)
+    if (
+        not args.no_mitm
+        and settings.read().get("enabled")
+        and settings.read().get("consented_thumbprint") == THUMB
+    ):
+        ACTIVE.start()
+    try:
+        server.serve_forever(poll_interval=0.3)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        ACTIVE.stop()
+        ACTIVE.closed = True
+        if ACTIVE.worker:
+            try:
+                ACTIVE.worker.wait(timeout=35)
+            except subprocess.TimeoutExpired:
+                print("Восстановление ещё выполняется отдельным процессом.", flush=True)
+        server.server_close()
+
+
+if __name__ == "__main__":
+    sys.exit(main() or 0)

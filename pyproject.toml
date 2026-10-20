@@ -1,0 +1,10 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["F", "E4", "E7", "E9", "I"]
+ignore = ["E402"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["E401"]
