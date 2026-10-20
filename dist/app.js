@@ -61,7 +61,7 @@ async function action(path, data = {}) {
     body: JSON.stringify(data),
   });
   const value = await r.json();
-  if (!r.ok) throw new Error(value.error || "Ошибка локального действия");
+  if (!r.ok) throw new Error(value.error || "Ошибка действия");
   return value;
 }
 function sessionView(s) {
@@ -71,33 +71,30 @@ function sessionView(s) {
   $("session-led").className =
     "session-led" + (active ? " active" : working ? " working" : "");
   $("session-title").textContent = active
-    ? "MITM работает"
+    ? "Прокси включён"
     : phase === "starting"
-      ? "Запускается MITM"
+      ? "Запуск прокси"
       : phase === "stopping"
         ? "Восстанавливается клиент"
         : phase === "cleanup_required"
-          ? "Нужно завершить восстановление"
-          : "MITM остановлен";
+          ? "Ошибка восстановления"
+          : "Прокси выключен";
   let subtitle = "Клиент подключается к Яндексу напрямую";
-  if (active) subtitle = "Только Яндекс Диск · включён до ручной остановки";
-  if (phase === "starting") subtitle = "Сертификат → прокси → перезапуск Диска";
+  if (active) subtitle = "Работает до ручной остановки";
+  if (phase === "starting") subtitle = "Добавление сертификата и запуск Диска";
   if (phase === "stopping")
     subtitle = "Возврат отметок хранения и удаление сертификата";
-  if (phase === "cleanup_required")
-    subtitle = "Проверьте журнал: требуется восстановление";
+  if (phase === "cleanup_required") subtitle = "Проверьте журнал";
   $("session-subtitle").textContent = subtitle;
   $("start").disabled = active || working;
   $("settings").disabled = active || working;
   $("notice-summary").textContent = {
-    defer:
-      "После первого ответа 500 полностью облачный файл временно откладывается.",
-    cooldown:
-      "Повторы ошибочных запросов ограничиваются; отметки хранения не меняются.",
-    observe: "Наблюдение: запросы и отметки хранения остаются без изменений.",
+    defer: "После HTTP 500 нескачанный файл откладывается.",
+    cooldown: "Повторы запросов ограничены. Отметки хранения не меняются.",
+    observe: "Запросы и отметки хранения не меняются.",
   }[s.mode];
   $("start").textContent =
-    phase === "cleanup_required" ? "↺ Восстановить" : "▶ Запустить MITM";
+    phase === "cleanup_required" ? "↺ Восстановить" : "▶ Включить прокси";
   $("stop").disabled = !(active || phase === "starting");
   if (document.activeElement !== $("mode")) $("mode").value = s.mode;
 }
@@ -113,15 +110,15 @@ function showDetails(row) {
       "Загрузка подтверждена",
       row.downloaded_at
         ? new Date(row.downloaded_at).toLocaleString("ru-RU")
-        : "Был на ПК до наблюдения / ещё не загружен",
+        : "Нет данных",
     ],
     [
       "Подключение при завершении",
       row.downloaded_at
         ? row.downloaded_via_proxy === null
-          ? "Завершилось между запусками панели"
+          ? "Между запусками панели"
           : row.downloaded_via_proxy
-            ? "Через MITM"
+            ? "Через прокси"
             : "Напрямую"
         : "—",
     ],
@@ -275,13 +272,12 @@ async function refresh() {
       snapshot.root || "Папка синхронизации ещё не выбрана";
     renderEvents(snapshot.events);
     if (snapshot.session.phase === "active")
-      $("cleanup").textContent =
-        "Без таймера. Работает до ручной остановки или закрытия окна CMD.";
+      $("cleanup").textContent = "Закрытие консоли останавливает прокси.";
     else if (snapshot.cleanup)
       $("cleanup").textContent =
         snapshot.cleanup.ca_removed && snapshot.cleanup.restore_failures === 0
-          ? "Последняя остановка: сертификат удалён, отметки восстановлены."
-          : "Остановка требует внимания — проверьте журнал.";
+          ? "Сертификат удалён, отметки восстановлены."
+          : "Ошибка восстановления. Проверьте журнал.";
     const params = new URLSearchParams({
       q: search,
       status: filter,
@@ -306,14 +302,14 @@ function setFilter(value) {
     errors: "Файлы с ошибками 500",
     deferred: "Отложенные файлы",
     local: "Файлы на компьютере",
-    downloaded: "Новые загрузки с начала наблюдения",
+    downloaded: "Новые загрузки",
     all: "Все отмеченные файлы",
   };
   $("list-title").textContent = titles[value];
   $("list-description").textContent =
     value === "downloaded"
-      ? "Только новые завершённые загрузки; счётчик сохраняется при перезапуске"
-      : "Только файлы, отмеченные для хранения на ПК";
+      ? "Скачанные после начала наблюдения"
+      : "Файлы с отметкой «Хранить на компьютере»";
   document
     .querySelectorAll(".nav")
     .forEach((e) => e.classList.toggle("active", e.dataset.filter === value));
@@ -369,7 +365,7 @@ $("setup-form").addEventListener("submit", async (event) => {
       client: $("setup-client").value,
     });
     $("setup-dialog").close();
-    toast("Настройка сохранена. Теперь можно включить прокси.");
+    toast("Настройки сохранены.");
     await refresh();
   } catch (error) {
     toast(error.message);
@@ -409,7 +405,7 @@ $("consent-start").addEventListener("click", async () => {
       accepted_thumbprint: snapshot.certificate_thumbprint,
     });
     $("consent-dialog").close();
-    toast("Прокси включается без таймера. Остановить его можно в этой панели.");
+    toast("Запуск прокси.");
     await refresh();
   } catch (error) {
     toast(error.message);

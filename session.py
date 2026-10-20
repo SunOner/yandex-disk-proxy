@@ -13,6 +13,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+import runtime
+import settings
 from winops import (
     APP,
     BASE_PY,
@@ -102,7 +104,7 @@ def main():
     try:
         if not parent_handle:
             raise RuntimeError("Panel process is unavailable")
-        for port in (18080,):
+        for port in (settings.PROXY_PORT,):
             with socket.socket() as probe:
                 if probe.connect_ex(("127.0.0.1", port)) == 0:
                     raise RuntimeError("Proxy port is already in use")
@@ -120,15 +122,13 @@ def main():
         hosts = r"^(cloud-api\.yandex\.net|downloader\.disk\.yandex\.ru|[^.]+\.storage\.yandex\.net)(:443)?$"
         import certifi
 
-        cmd = [
-            str(PROXY_PY),
-            "-c",
-            "from mitmproxy.tools.main import mitmdump; mitmdump()",
+        cmd = runtime.command(
+            "proxy",
             "-q",
             "--listen-host",
             "127.0.0.1",
             "--listen-port",
-            "18080",
+            str(settings.PROXY_PORT),
             "--set",
             "confdir=" + str(CA_DIR),
             "--set",
@@ -139,7 +139,7 @@ def main():
             hosts,
             "-s",
             str(APP / "addon.py"),
-        ]
+        )
         proxy = subprocess.Popen(
             cmd,
             env=env,

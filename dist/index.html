@@ -12,7 +12,7 @@
         <span class="brand-icon">Д</span>
         <div>Диск<span class="brand-sub">ЛОКАЛЬНЫЙ ПРОКСИ</span></div>
       </div>
-      <div class="nav-title">РАБОЧАЯ ОБЛАСТЬ</div>
+      <div class="nav-title">ФАЙЛЫ</div>
       <button class="nav active" data-filter="pending">
         <span>▤</span> Очередь загрузки <b id="nav-count">—</b></button
       ><button class="nav" data-filter="errors">
@@ -27,7 +27,7 @@
         <span>▦</span> Все отмеченные
       </button>
       <div class="sidebar-bottom">
-        <span class="local-dot"></span> Только этот компьютер
+        <span class="local-dot"></span> Локальное подключение
         <p>127.0.0.1 · без повторного входа</p>
         <div class="sidebar-note">
           Прокси используется только процессом Яндекс Диска.
@@ -37,24 +37,21 @@
     <main>
       <header>
         <div>
-          <div class="eyebrow">ЯНДЕКС ДИСК / MITM</div>
-          <h1>Загрузка без догадок<span class="heading-dot">.</span></h1>
-          <p class="intro">
-            Следите за реальными загрузками и временно откладывайте недоступные
-            файлы.
-          </p>
+          <div class="eyebrow">ЯНДЕКС ДИСК</div>
+          <h1>Загрузки Яндекс Диска</h1>
+          <p class="intro">Состояние файлов и ошибки синхронизации.</p>
         </div>
         <div class="header-actions">
           <span id="connection" class="connection">Подключение к панели…</span
           ><button id="settings" class="button">Настройка</button
-          ><span class="version">0.1 · ЭКСПЕРИМЕНТАЛЬНО</span>
+          ><span class="version">0.2.0 · ТЕСТОВАЯ ВЕРСИЯ</span>
         </div>
       </header>
       <section class="session-bar">
         <div class="session-info">
           <span id="session-led" class="session-led"></span>
           <div>
-            <strong id="session-title">MITM остановлен</strong
+            <strong id="session-title">Прокси выключен</strong
             ><span id="session-subtitle"
               >Клиент подключается к Яндексу напрямую</span
             >
@@ -63,10 +60,10 @@
         <div class="session-controls">
           <label for="mode">При ошибке 500</label
           ><select id="mode">
-            <option value="defer">Отложить файл через Windows</option>
-            <option value="cooldown">Только ограничить повторы</option>
+            <option value="defer">Откладывать файлы</option>
+            <option value="cooldown">Ограничивать повторы</option>
             <option value="observe">Наблюдать</option></select
-          ><button id="start" class="button primary">▶ Запустить MITM</button
+          ><button id="start" class="button primary">▶ Включить прокси</button
           ><button id="stop" class="button stop" disabled>
             ■ Остановить и восстановить
           </button>
@@ -86,7 +83,7 @@
       </div>
       <section class="metrics">
         <article>
-          <span>ЕЩЁ НЕ НА ПК</span><strong id="metric-pending">—</strong
+          <span>ОСТАЛОСЬ СКАЧАТЬ</span><strong id="metric-pending">—</strong
           ><small id="metric-size">Считывание списка</small>
         </article>
         <article>
@@ -148,7 +145,7 @@
               </thead>
               <tbody id="files"></tbody>
             </table>
-            <div id="empty" class="empty" hidden>Здесь пока нет файлов</div>
+            <div id="empty" class="empty" hidden>Файлов нет</div>
           </div>
           <footer class="table-footer">
             <span id="pagination-label">—</span>
@@ -171,7 +168,7 @@
         </section>
         <aside class="activity-panel">
           <div class="activity-heading">
-            <h2>Живой журнал</h2>
+            <h2>Журнал</h2>
             <span class="live-dot"></span>
           </div>
           <p class="muted">События этого запуска панели</p>
@@ -179,7 +176,7 @@
           <div class="protection">
             <span>⌁</span>
             <div>
-              <strong>Доступ остаётся локальным</strong>
+              <strong>Локальные данные</strong>
               <p>
                 Токены, cookies и содержимое файлов не сохраняются. Пути файлов
                 остаются в локальном журнале.
@@ -205,18 +202,15 @@
       <p id="detail-path" class="detail-path"></p>
       <dl id="detail-values"></dl>
       <p class="detail-note">
-        Байты в сети могут повторяться. Факт сохранения на ПК проверяется
-        отдельно через Windows Cloud Files.
+        Сетевой объём включает повторы. Сохранение файла проверяется через
+        Windows.
       </p>
     </dialog>
     <dialog id="setup-dialog">
       <form id="setup-form">
         <div class="eyebrow">ПОДКЛЮЧЕНИЕ ПРИЛОЖЕНИЯ</div>
         <h2>Настройка Яндекс Диска</h2>
-        <p class="dialog-intro">
-          Выберите установленное приложение и его папку синхронизации. Новый
-          вход в аккаунт не нужен.
-        </p>
+        <p class="dialog-intro">Укажите папку синхронизации и приложение.</p>
         <label class="field"
           >Папка синхронизации<input
             id="setup-root"
@@ -232,37 +226,33 @@
             placeholder="Полный путь к YandexDisk4.exe"
         /></label>
         <p class="detail-note">
-          Учитываются только файлы с отметкой «Хранить на компьютере». Другие
-          папки автоматически не скачиваются.
+          Скачиваются только файлы с отметкой «Хранить на компьютере».
         </p>
         <div class="dialog-actions">
           <button type="button" id="setup-cancel" class="button">Отмена</button
-          ><button class="button primary" type="submit">
-            Сохранить настройку
-          </button>
+          ><button class="button primary" type="submit">Сохранить</button>
         </div>
       </form>
     </dialog>
     <dialog id="consent-dialog">
-      <div class="eyebrow">ПЕРЕД ВКЛЮЧЕНИЕМ ПРОКСИ</div>
-      <h2>Временное доверие HTTPS</h2>
+      <div class="eyebrow">ПОДКЛЮЧЕНИЕ HTTPS</div>
+      <h2>Сертификат прокси</h2>
       <p class="dialog-intro">
-        Прокси перезапустит Яндекс Диск и добавит свой корневой сертификат в
-        хранилище текущего пользователя Windows. Пока он установлен, доверие
-        HTTPS меняется для приложений этого пользователя.
+        Прокси перезапустит Диск и добавит корневой сертификат в хранилище
+        текущего пользователя Windows. Пока сертификат установлен, ему доверяют
+        приложения этого пользователя.
       </p>
       <p class="dialog-intro">
-        Через прокси направляется только процесс Яндекс Диска. При остановке
-        сертификат удаляется, исходные отметки хранения возвращаются, приложение
-        запускается напрямую.
+        Через прокси работает только Диск. При остановке сертификат удаляется,
+        отметки хранения восстанавливаются, Диск запускается напрямую.
       </p>
       <div class="certificate">
         <span>Отпечаток сертификата этого ПК · SHA-1</span
         ><code id="certificate-thumbprint"></code>
       </div>
       <label class="consent-check"
-        ><input id="consent-checkbox" type="checkbox" />Я понимаю изменение
-        доверия HTTPS и хочу включить локальный прокси.</label
+        ><input id="consent-checkbox" type="checkbox" />Разрешаю временно
+        добавить этот сертификат.</label
       >
       <div class="dialog-actions">
         <button id="consent-cancel" class="button">Отмена</button

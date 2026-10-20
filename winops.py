@@ -9,14 +9,16 @@ import sys
 from ctypes import wintypes as W
 from pathlib import Path
 
+import runtime
 import settings
 
 APP = settings.APP
 WORK = settings.LOCAL
 ROOT, CLIENT = settings.ROOT, settings.CLIENT
 PROXY_PY = settings.PYTHON
-MITM = PROXY_PY.with_name("mitmdump.exe")
-BASE_PY = Path(getattr(sys, "_base_executable", sys.executable)).resolve()
+BASE_PY = (
+    PROXY_PY if runtime.FROZEN else Path(getattr(sys, "_base_executable", sys.executable)).resolve()
+)
 CA_DIR = settings.CA_DIR
 THUMB = settings.THUMB
 NO_WINDOW = subprocess.CREATE_NO_WINDOW
@@ -205,7 +207,7 @@ def stop_exact(pid, expected, created=None):
 
 def client_pids():
     ps = "Get-CimInstance Win32_Process -Filter \"Name='YandexDisk4.exe'\" | Select-Object -ExpandProperty ProcessId"
-    r = subprocess.run(
+    r = runtime.external_run(
         ["powershell.exe", "-NoProfile", "-Command", ps],
         capture_output=True,
         text=True,
@@ -221,12 +223,12 @@ def launch_client(proxy=False):
     env = os.environ.copy()
     if proxy:
         env.update(
-            HTTPS_PROXY="http://127.0.0.1:18080",
-            ALL_PROXY="http://127.0.0.1:18080",
+            HTTPS_PROXY=f"http://127.0.0.1:{settings.PROXY_PORT}",
+            ALL_PROXY=f"http://127.0.0.1:{settings.PROXY_PORT}",
             NO_PROXY="localhost,127.0.0.1,::1",
             SSL_CERT_FILE=str(CA_DIR / "mitmproxy-ca-cert.pem"),
         )
-    return subprocess.Popen([str(CLIENT), "-startmenu"], env=env, creationflags=NO_WINDOW)
+    return runtime.external_popen([str(CLIENT), "-startmenu"], env=env, creationflags=NO_WINDOW)
 
 
 def ca_present(thumb=None):
@@ -236,7 +238,7 @@ def ca_present(thumb=None):
     command = (
         "if(Test-Path -LiteralPath 'Cert:\\CurrentUser\\Root\\" + thumb + "'){exit 0}else{exit 1}"
     )
-    r = subprocess.run(
+    r = runtime.external_run(
         ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],
         capture_output=True,
         timeout=15,
@@ -254,7 +256,7 @@ def add_ca():
     cert = CA_DIR / "approved-diagnostic-ca.cer"
     cert.write_bytes(der)
     # Windows may require a native protected-root confirmation. Keep it visible.
-    process = subprocess.Popen(
+    process = runtime.external_popen(
         ["certutil.exe", "-user", "-addstore", "Root", str(cert)],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -276,7 +278,7 @@ def remove_ca(thumb=None):
     thumb = thumb or THUMB
     if not re.fullmatch("[0-9A-F]{40}", thumb):
         raise ValueError("Некорректный отпечаток сертификата")
-    subprocess.run(
+    runtime.external_run(
         ["certutil.exe", "-user", "-delstore", "Root", thumb],
         capture_output=True,
         timeout=20,

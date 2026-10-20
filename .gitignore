@@ -20,3 +20,7 @@ verification*.json
 download-verification.json
 Thumbs.db
 .DS_Store
+build/
+release/
+*.exe
+build-log.txt

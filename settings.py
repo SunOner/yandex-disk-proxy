@@ -4,13 +4,21 @@ import hashlib
 import json
 import os
 import ssl
+import sys
 from pathlib import Path
 
-APP = Path(__file__).resolve().parent
-LOCAL = APP / ".local"
-LOCAL.mkdir(exist_ok=True)
+from runtime import FROZEN, INSTALL, RESOURCES
+
+APP = RESOURCES
+LOCAL = Path(
+    os.environ.get("YDP_DATA_DIR")
+    or (Path(os.environ["LOCALAPPDATA"]) / "YandexDiskProxy" if FROZEN else INSTALL / ".local")
+).resolve()
+LOCAL.mkdir(parents=True, exist_ok=True)
 CONFIG = LOCAL / "config.json"
-PYTHON = APP / ".venv/Scripts/python.exe"
+PYTHON = Path(sys.executable).resolve()
+PANEL_PORT = int(os.environ.get("YDP_PANEL_PORT", "18765"))
+PROXY_PORT = int(os.environ.get("YDP_PROXY_PORT", "18080"))
 
 
 def read():
@@ -62,7 +70,7 @@ def validate(root, client):
         raise ValueError("Папка синхронизации не найдена")
     if r == r.parent or r == Path.home().resolve():
         raise ValueError("Укажите именно папку Яндекс Диска")
-    if APP.is_relative_to(r):
+    if INSTALL.is_relative_to(r) or LOCAL.is_relative_to(r):
         raise ValueError("Переместите проект за пределы синхронизируемой папки")
     if not c.is_file() or c.name.casefold() != "yandexdisk4.exe":
         raise ValueError("Укажите установленный YandexDisk4.exe")

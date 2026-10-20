@@ -18,6 +18,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import runtime
 import settings
 import winops
 from downloads import History
@@ -35,7 +36,7 @@ from winops import (
 )
 
 sys.stdout.reconfigure(encoding="utf-8")
-PORT = 18765
+PORT = settings.PANEL_PORT
 URL = f"http://127.0.0.1:{PORT}"
 RUNTIME = settings.RUNTIME
 KEY = secrets.token_urlsafe(32)
@@ -122,7 +123,7 @@ class Model:
                             if self.downloads.complete_if_pending(row["path"], metadata):
                                 self.log(
                                     "local",
-                                    "Windows подтвердила загрузку между запусками панели",
+                                    "Файл скачан между запусками панели",
                                     row["path"],
                                 )
                         else:
@@ -188,22 +189,17 @@ class Model:
             self.directory.mkdir(parents=True)
             self.control = {"stop": False, "commands": []}
             self.save_control()
-            env = os.environ.copy()
+            env = runtime.child_env(independent=True)
             env.update(YDM_PANEL_KEY=KEY, YDM_PANEL_URL=URL)
             self.worker = subprocess.Popen(
-                [
-                    sys.executable,
-                    str(APP / "session.py"),
-                    str(self.directory),
-                    str(os.getpid()),
-                ],
+                runtime.command("worker", self.directory, os.getpid()),
                 env=env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 creationflags=NO_WINDOW,
             )
             settings.preference(enabled=True)
-            self.log("session_starting", "Запускается MITM до ручной остановки")
+            self.log("session_starting", "Запуск прокси")
 
     def stop(self):
         with self.lock:
@@ -216,7 +212,7 @@ class Model:
         if rel not in self.files:
             raise ValueError("Файла нет в списке хранения на ПК")
         if self.session().get("phase") != "active":
-            raise ValueError("MITM-сеанс не запущен")
+            raise ValueError("Прокси выключен")
         if action == "defer":
             s = info(rel)
             if not can_defer(s):
@@ -309,7 +305,7 @@ class Model:
             elif kind == "deferred":
                 row["status"] = "deferred"
                 row["cooldown_until"] = time.time() + self.cooldown
-                self.log("deferred", "Windows подтвердила временное откладывание файла", rel)
+                self.log("deferred", "Файл отложен", rel)
             elif kind == "restored":
                 row["status"] = "waiting"
                 row["cooldown_until"] = 0
@@ -344,10 +340,10 @@ class Model:
                 messages = {
                     "ca_added": "Временный сертификат добавлен для текущего пользователя",
                     "proxy_ready": "Прокси слушает только 127.0.0.1:18080",
-                    "session_active": "Диск запущен через MITM",
+                    "session_active": "Диск запущен через прокси",
                     "session_error": "Ошибка сеанса; выполняется восстановление",
                     "client_direct": "Клиент возвращён к прямому подключению",
-                    "session_stopped": "MITM остановлен, выполнено восстановление",
+                    "session_stopped": "Прокси выключен",
                 }
                 if kind == "session_stopped":
                     self.latest_cleanup = {
@@ -401,7 +397,7 @@ class Model:
                                 row["cooldown_until"] = 0
                         self.log(
                             "session_stopped",
-                            "Сеанс завершён. Сертификат и отметки проверены.",
+                            "Сеанс завершён",
                         )
             except (OSError, ValueError):
                 pass
@@ -430,7 +426,7 @@ class Model:
                                 )
                                 self.log(
                                     "local",
-                                    "Файл полностью сохранён и подтверждён Windows",
+                                    "Файл скачан",
                                     rel,
                                 )
                                 if was_deferred and self.session().get("phase") == "active":
@@ -443,7 +439,9 @@ class Model:
             counts = collections.Counter(row["status"] for row in self.files.values())
             return {
                 "app": "disk-mitm-panel",
-                "version": 2,
+                "version": runtime.VERSION,
+                "frozen": runtime.FROZEN,
+                "data_directory": str(settings.LOCAL),
                 "nonce": NONCE,
                 "root": str(ROOT) if ROOT else "",
                 "client": str(CLIENT) if CLIENT else "",
@@ -626,7 +624,7 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/setup":
                 with ACTIVE.lock:
                     if ACTIVE.session().get("phase") not in ("idle", "stopped"):
-                        raise ValueError("Сначала остановите MITM и завершите восстановление")
+                        raise ValueError("Сначала остановите прокси и завершите восстановление")
                     ROOT, CLIENT = settings.save(data.get("root", ""), data.get("client", ""))
                     winops.ROOT, winops.CLIENT = ROOT, CLIENT
                     ACTIVE.files = {}
@@ -708,7 +706,7 @@ def main():
         ACTIVE.directory = unresolved[-1]
     threading.Thread(target=ACTIVE.monitor, daemon=True).start()
     print(
-        "\nЯНДЕКС ДИСК · ЛОКАЛЬНЫЙ MITM\n"
+        "\nЯНДЕКС ДИСК · ПРОКСИ\n"
         + URL
         + "\nCtrl+C: остановить, убрать сертификат и восстановить клиент.\n",
         flush=True,
