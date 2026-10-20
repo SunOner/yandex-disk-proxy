@@ -5,6 +5,8 @@ let snapshot = null,
   filter = "pending",
   search = "",
   busy = false,
+  refreshQueued = false,
+  connected = false,
   timer = null;
 const $ = (id) => document.getElementById(id);
 const labels = {
@@ -15,8 +17,9 @@ const labels = {
   http500: "Ошибка 500",
   deferred: "Отложен",
   deferring: "Откладывается",
+  restoring: "Возврат в очередь",
   cooldown: "Пауза повторов",
-  error: "Ошибка сети",
+  error: "Ошибка",
 };
 function bytes(n) {
   n = Number(n) || 0;
@@ -45,13 +48,20 @@ function node(tag, cls, text) {
   return e;
 }
 function toast(text) {
+  const dialog = document.querySelector("dialog[open]");
+  const error = dialog?.querySelector(".dialog-error");
+  if (error) {
+    error.textContent = text;
+    error.hidden = false;
+    return;
+  }
   $("toast").textContent = text;
   $("toast").hidden = false;
   clearTimeout(timer);
   timer = setTimeout(() => ($("toast").hidden = true), 6000);
 }
 async function action(path, data = {}) {
-  if (!snapshot) return;
+  if (!snapshot || !connected) throw new Error("Нет связи с панелью");
   const r = await fetch(path, {
     method: "POST",
     headers: {
@@ -79,20 +89,9 @@ function sessionView(s) {
         : phase === "cleanup_required"
           ? "Ошибка восстановления"
           : "Прокси выключен";
-  let subtitle = "Клиент подключается к Яндексу напрямую";
-  if (active) subtitle = "Работает до ручной остановки";
-  if (phase === "starting") subtitle = "Добавление сертификата и запуск Диска";
-  if (phase === "stopping")
-    subtitle = "Возврат отметок хранения и удаление сертификата";
-  if (phase === "cleanup_required") subtitle = "Проверьте журнал";
-  $("session-subtitle").textContent = subtitle;
   $("start").disabled = active || working;
   $("settings").disabled = active || working;
-  $("notice-summary").textContent = {
-    defer: "После HTTP 500 нескачанный файл откладывается.",
-    cooldown: "Повторы запросов ограничены. Отметки хранения не меняются.",
-    observe: "Запросы и отметки хранения не меняются.",
-  }[s.mode];
+  $("mode").disabled = working;
   $("start").textContent =
     phase === "cleanup_required" ? "↺ Восстановить" : "▶ Включить прокси";
   $("stop").disabled = !(active || phase === "starting");
@@ -139,6 +138,7 @@ function showDetails(row) {
 }
 function renderRows(data) {
   total = data.total;
+  offset = data.offset;
   const body = $("files");
   body.replaceChildren();
   for (const row of data.rows) {
@@ -166,10 +166,11 @@ function renderRows(data) {
     tr.append(state);
     const contentCode =
       row.download_http ||
+      (row.api_http >= 400 ? row.api_http : null) ||
       (row.last_host !== "cloud-api.yandex.net" ? row.last_http : null);
     const code = node(
       "td",
-      "http" + (contentCode === 500 ? " bad" : ""),
+      "http" + (contentCode >= 400 ? " bad" : ""),
       contentCode || "—",
     );
     code.title = "API ссылки: " + (row.api_http || "—");
@@ -200,7 +201,10 @@ function renderRows(data) {
             .catch((e) => toast(e.message)),
         );
         actions.append(retry);
-      } else if (row.http500 > 0 && !["deferring"].includes(row.status)) {
+      } else if (
+        row.http500 > 0 &&
+        !["deferring", "restoring"].includes(row.status)
+      ) {
         const defer = node("button", "row-action", "Отложить");
         defer.addEventListener("click", () =>
           action("/api/defer", { file: row.path })
@@ -238,14 +242,20 @@ function renderEvents(events) {
   }
 }
 async function refresh() {
-  if (busy) return;
+  if (busy) {
+    refreshQueued = true;
+    return;
+  }
   busy = true;
+  const requested = [filter, search, offset];
+  const criteria = JSON.stringify(requested);
   try {
-    const response = await fetch("/api/state");
+    const response = await fetch("/api/state", {
+      signal: AbortSignal.timeout(10000),
+    });
     if (!response.ok) throw new Error("Backend unavailable");
     snapshot = await response.json();
-    $("connection").textContent = "● Панель подключена";
-    $("connection").className = "connection";
+    connected = true;
     sessionView(snapshot);
     $("metric-pending").textContent = number(snapshot.pending);
     $("nav-count").textContent = number(snapshot.pending);
@@ -271,32 +281,38 @@ async function refresh() {
     $("root-path").textContent =
       snapshot.root || "Папка синхронизации ещё не выбрана";
     renderEvents(snapshot.events);
-    if (snapshot.session.phase === "active")
-      $("cleanup").textContent = "Закрытие консоли останавливает прокси.";
-    else if (snapshot.cleanup)
-      $("cleanup").textContent =
-        snapshot.cleanup.ca_removed && snapshot.cleanup.restore_failures === 0
-          ? "Сертификат удалён, отметки восстановлены."
-          : "Ошибка восстановления. Проверьте журнал.";
     const params = new URLSearchParams({
-      q: search,
-      status: filter,
-      offset: String(offset),
+      q: requested[1],
+      status: requested[0],
+      offset: String(requested[2]),
       limit: "60",
     });
-    const data = await (await fetch("/api/files?" + params)).json();
-    renderRows(data);
+    const responseFiles = await fetch("/api/files?" + params, {
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!responseFiles.ok) throw new Error("Не удалось получить список файлов");
+    const data = await responseFiles.json();
+    if (criteria === JSON.stringify([filter, search, offset])) renderRows(data);
+    else refreshQueued = true;
   } catch (e) {
-    $("connection").textContent = "● Нет связи с панелью";
-    $("connection").className = "connection offline";
+    connected = false;
+    $("session-title").textContent = "Нет связи с панелью";
+    $("session-led").className = "session-led offline";
+    for (const id of ["start", "stop", "settings", "mode"])
+      $(id).disabled = true;
   } finally {
     busy = false;
+    if (refreshQueued) {
+      refreshQueued = false;
+      queueMicrotask(refresh);
+    }
   }
 }
 function setFilter(value) {
   filter = value;
   offset = 0;
   $("filter").value = value;
+  $("files").replaceChildren();
   const titles = {
     pending: "Очередь загрузки",
     errors: "Файлы с ошибками 500",
@@ -344,6 +360,7 @@ $("mode").addEventListener("change", (e) =>
     .catch((e) => toast(e.message)),
 );
 function openSetup() {
+  $("setup-error").hidden = true;
   $("setup-root").value = snapshot.root;
   $("setup-client").value = snapshot.client;
   const options = $("root-options");
@@ -385,6 +402,7 @@ $("start").addEventListener("click", async () => {
     openSetup();
     return;
   }
+  $("consent-error").hidden = true;
   $("certificate-thumbprint").textContent = snapshot.certificate_thumbprint
     .match(/.{1,4}/g)
     .join(" ");

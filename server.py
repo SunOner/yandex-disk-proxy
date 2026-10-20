@@ -213,6 +213,9 @@ class Model:
             raise ValueError("Файла нет в списке хранения на ПК")
         if self.session().get("phase") != "active":
             raise ValueError("Прокси выключен")
+        row = self.files[rel]
+        if action == "restore" and row["status"] == "restoring":
+            return
         if action == "defer":
             s = info(rel)
             if not can_defer(s):
@@ -225,8 +228,34 @@ class Model:
         if action == "defer":
             self.files[rel]["status"] = "deferring"
         else:
-            self.files[rel]["cooldown_until"] = 0
-            self.files[rel]["consecutive_500"] = 0
+            row["cooldown_until"] = 0
+            row["consecutive_500"] = 0
+            if row["status"] != "local":
+                row["restore_previous"] = row["status"]
+                row["status"] = "restoring"
+
+    def set_mode(self, mode):
+        if mode not in ("observe", "cooldown", "defer"):
+            raise ValueError("Неизвестный режим")
+        with self.lock:
+            self.mode = mode
+            if mode != "defer" and self.session().get("phase") == "active":
+                for rel, row in self.files.items():
+                    if row["status"] in ("deferred", "deferring"):
+                        self.command("restore", rel)
+            if mode == "observe":
+                for row in self.files.values():
+                    row["cooldown_until"] = 0
+            settings.preference(mode=mode)
+            self.log(
+                "mode",
+                "Режим: "
+                + {
+                    "defer": "откладывание",
+                    "cooldown": "ограничение повторов",
+                    "observe": "наблюдение",
+                }[mode],
+            )
 
     def event(self, event):
         with self.lock:
@@ -247,13 +276,14 @@ class Model:
             elif kind == "attempt":
                 row["attempts"] += 1
                 row["last_time"] = stamp()
-                row["status"] = "requesting" if row["status"] != "deferred" else row["status"]
+                if row["status"] not in ("local", "deferred", "deferring", "restoring"):
+                    row["status"] = "requesting"
             elif kind == "bytes":
                 count = event.get("bytes", 0)
                 if isinstance(count, int) and 0 <= count <= 1024**3:
                     row["network_bytes"] += count
                     self.counters["network_bytes"] += count
-                if row["status"] not in ("deferred", "deferring", "local"):
+                if row["status"] not in ("deferred", "deferring", "restoring", "local"):
                     row["status"] = "downloading"
             elif kind == "http":
                 identity = event.get("flow")
@@ -273,13 +303,13 @@ class Model:
                     row["http500"] += 1
                     row["consecutive_500"] += 1
                     self.counters["http500"] += 1
-                    if row["status"] not in ("local", "deferred", "deferring"):
+                    if row["status"] not in ("local", "deferred", "deferring", "restoring"):
                         row["status"] = "http500"
                     self.log("http500", "HTTP 500 от сервера Яндекса", rel)
                     if (
                         self.mode != "observe"
                         and row["consecutive_500"] >= self.threshold
-                        and row["status"] != "local"
+                        and row["status"] not in ("local", "restoring")
                     ):
                         row["cooldown_until"] = time.time() + self.cooldown
                         if self.mode == "defer" and row["status"] not in (
@@ -296,24 +326,35 @@ class Model:
                                 )
                 elif code in (200, 206) and event.get("host") != "cloud-api.yandex.net":
                     row["consecutive_500"] = 0
+                elif isinstance(code, int) and code >= 400:
+                    if row["status"] not in ("local", "deferred", "deferring", "restoring"):
+                        row["status"] = "error"
             elif kind == "cooldown":
                 row["blocked"] += 1
                 self.counters["blocked"] += 1
                 row["last_delivered"] = 503
-                if row["status"] not in ("deferred", "deferring", "local"):
+                if row["status"] not in ("deferred", "deferring", "restoring", "local"):
                     row["status"] = "cooldown"
             elif kind == "deferred":
-                row["status"] = "deferred"
+                if row["status"] not in ("restoring", "local"):
+                    row["status"] = "deferred"
                 row["cooldown_until"] = time.time() + self.cooldown
                 self.log("deferred", "Файл отложен", rel)
             elif kind == "restored":
-                row["status"] = "waiting"
+                if row["status"] != "local":
+                    row["status"] = "waiting"
+                row.pop("restore_previous", None)
                 row["cooldown_until"] = 0
                 row["consecutive_500"] = 0
                 self.log("restored", "Исходная отметка хранения восстановлена", rel)
             elif kind == "pin_error":
                 if row and row["status"] == "deferring":
                     row["status"] = "http500"
+                elif row and row["status"] == "restoring" and event.get("action") == "restore":
+                    previous = row.pop("restore_previous", "deferred")
+                    row["status"] = (
+                        "deferred" if previous in ("deferred", "deferring") else "http500"
+                    )
                 self.log(
                     "pin_error",
                     "Изменение отметки не применено; файл оставлен в исходном состоянии",
@@ -326,6 +367,7 @@ class Model:
                     "local",
                     "deferred",
                     "deferring",
+                    "restoring",
                     "http500",
                 ):
                     row["status"] = "error"
@@ -391,6 +433,7 @@ class Model:
                             if row["status"] in (
                                 "deferred",
                                 "deferring",
+                                "restoring",
                                 "cooldown",
                             ) and row["path"] not in current.get("restore_failures", []):
                                 row["status"] = "waiting"
@@ -412,7 +455,9 @@ class Model:
                     if not s.st_file_attributes & 0x400000 or status == "downloading":
                         metadata = info(rel)
                         with self.lock:
-                            row = self.files[rel]
+                            row = self.files.get(rel)
+                            if row is None:
+                                continue
                             row["on_disk"] = metadata["on_disk"]
                             row["validated"] = metadata["validated"]
                             if metadata["validated"] >= row["size"] and metadata["modified"] == 0:
@@ -517,6 +562,8 @@ class Model:
                     r["path"].casefold(),
                 )
             )
+            if offset >= len(rows):
+                offset = ((len(rows) - 1) // limit) * limit if rows else 0
             return {
                 "total": len(rows),
                 "offset": offset,
@@ -639,21 +686,7 @@ class Handler(BaseHTTPRequestHandler):
                     if ACTIVE.directory:
                         recover_session(ACTIVE.directory)
             elif self.path == "/api/config":
-                mode = data.get("mode")
-                if mode not in ("observe", "cooldown", "defer"):
-                    raise ValueError("Unknown mode")
-                with ACTIVE.lock:
-                    ACTIVE.mode = mode
-                    settings.preference(mode=mode)
-                    ACTIVE.log(
-                        "mode",
-                        "Режим изменён: "
-                        + {
-                            "defer": "откладывание",
-                            "observe": "наблюдение",
-                            "cooldown": "ограничение повторов",
-                        }[mode],
-                    )
+                ACTIVE.set_mode(data.get("mode"))
             elif self.path in ("/api/defer", "/api/retry"):
                 with ACTIVE.lock:
                     ACTIVE.command(

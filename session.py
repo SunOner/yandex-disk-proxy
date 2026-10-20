@@ -95,6 +95,7 @@ def main():
     def restore(rel):
         item = ledger.get(rel)
         if not item:
+            event("restored", file=rel)
             return
         set_pin(rel, item["original_pin"], item["before"])
         del ledger[rel]
@@ -216,7 +217,9 @@ def main():
                     elif command["action"] == "restore":
                         restore(rel)
                 except Exception as exc:
-                    event("pin_error", file=rel, reason=type(exc).__name__)
+                    event(
+                        "pin_error", file=rel, action=command["action"], reason=type(exc).__name__
+                    )
             if time.monotonic() - last_ping >= 2:
                 record(deferred_count=len(ledger))
                 last_ping = time.monotonic()

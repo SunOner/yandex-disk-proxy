@@ -10,7 +10,7 @@
     <aside class="sidebar">
       <div class="brand">
         <span class="brand-icon">Д</span>
-        <div>Диск<span class="brand-sub">ЛОКАЛЬНЫЙ ПРОКСИ</span></div>
+        <div>Диск</div>
       </div>
       <div class="nav-title">ФАЙЛЫ</div>
       <button class="nav active" data-filter="pending">
@@ -26,35 +26,13 @@
       ><button class="nav" data-filter="all">
         <span>▦</span> Все отмеченные
       </button>
-      <div class="sidebar-bottom">
-        <span class="local-dot"></span> Локальное подключение
-        <p>127.0.0.1 · без повторного входа</p>
-        <div class="sidebar-note">
-          Прокси используется только процессом Яндекс Диска.
-        </div>
-      </div>
     </aside>
     <main>
-      <header>
-        <div>
-          <div class="eyebrow">ЯНДЕКС ДИСК</div>
-          <h1>Загрузки Яндекс Диска</h1>
-          <p class="intro">Состояние файлов и ошибки синхронизации.</p>
-        </div>
-        <div class="header-actions">
-          <span id="connection" class="connection">Подключение к панели…</span
-          ><button id="settings" class="button">Настройка</button
-          ><span class="version">0.2.0 · ТЕСТОВАЯ ВЕРСИЯ</span>
-        </div>
-      </header>
       <section class="session-bar">
         <div class="session-info">
           <span id="session-led" class="session-led"></span>
           <div>
-            <strong id="session-title">Прокси выключен</strong
-            ><span id="session-subtitle"
-              >Клиент подключается к Яндексу напрямую</span
-            >
+            <strong id="session-title">Прокси выключен</strong>
           </div>
         </div>
         <div class="session-controls">
@@ -65,22 +43,10 @@
             <option value="observe">Наблюдать</option></select
           ><button id="start" class="button primary">▶ Включить прокси</button
           ><button id="stop" class="button stop" disabled>
-            ■ Остановить и восстановить
-          </button>
+            ■ Остановить и восстановить</button
+          ><button id="settings" class="button">Настройка</button>
         </div>
       </section>
-      <div id="notice" class="notice">
-        <span class="info-icon">i</span>
-        <div>
-          <strong id="notice-summary"
-            >После первого ответа 500 файл временно откладывается.</strong
-          ><span
-            >При остановке сеанса исходные отметки хранения восстанавливаются.
-            Частично скачанные и изменённые файлы автоматически не
-            откладываются.</span
-          >
-        </div>
-      </div>
       <section class="metrics">
         <article>
           <span>ОСТАЛОСЬ СКАЧАТЬ</span><strong id="metric-pending">—</strong
@@ -171,25 +137,11 @@
             <h2>Журнал</h2>
             <span class="live-dot"></span>
           </div>
-          <p class="muted">События этого запуска панели</p>
           <div id="events" class="events"></div>
-          <div class="protection">
-            <span>⌁</span>
-            <div>
-              <strong>Локальные данные</strong>
-              <p>
-                Токены, cookies и содержимое файлов не сохраняются. Пути файлов
-                остаются в локальном журнале.
-              </p>
-            </div>
-          </div>
         </aside>
       </div>
       <footer class="page-footer">
-        <span id="root-path">Папка синхронизации</span
-        ><span id="cleanup"
-          >Без таймера. Остановка возвращает прямое подключение.</span
-        >
+        <span id="root-path">Папка синхронизации</span>
       </footer>
     </main>
     <div id="toast" class="toast" role="status" hidden></div>
@@ -228,6 +180,7 @@
         <p class="detail-note">
           Скачиваются только файлы с отметкой «Хранить на компьютере».
         </p>
+        <p id="setup-error" class="dialog-error" role="alert" hidden></p>
         <div class="dialog-actions">
           <button type="button" id="setup-cancel" class="button">Отмена</button
           ><button class="button primary" type="submit">Сохранить</button>
@@ -254,6 +207,7 @@
         ><input id="consent-checkbox" type="checkbox" />Разрешаю временно
         добавить этот сертификат.</label
       >
+      <p id="consent-error" class="dialog-error" role="alert" hidden></p>
       <div class="dialog-actions">
         <button id="consent-cancel" class="button">Отмена</button
         ><button id="consent-start" class="button primary" disabled>

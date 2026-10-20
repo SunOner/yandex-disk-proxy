@@ -71,13 +71,6 @@ select:focus-visible {
   background: #f5d05a;
   color: #191c24;
 }
-.brand-sub {
-  display: block;
-  font-size: 8px;
-  letter-spacing: 1.6px;
-  margin-top: 1px;
-  color: var(--muted);
-}
 .nav-title {
   margin: 0 14px 15px;
   color: #728199;
@@ -117,23 +110,6 @@ select:focus-visible {
   border-color: #304666;
   color: #edf3ff;
 }
-.sidebar-bottom {
-  margin-top: auto;
-  border-top: 1px solid var(--line);
-  padding: 22px 12px 0;
-  font-size: 11px;
-}
-.sidebar-bottom p {
-  margin: 8px 0 18px;
-  color: var(--muted);
-  font-size: 10px;
-}
-.sidebar-note {
-  font-size: 11px;
-  color: #8999ae;
-  line-height: 1.8;
-}
-.local-dot,
 .live-dot {
   display: inline-block;
   width: 6px;
@@ -148,12 +124,6 @@ main {
   padding: 34px 32px 22px;
   max-width: 2200px;
 }
-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 28px;
-}
 .eyebrow {
   font-size: 10px;
   font-weight: 650;
@@ -161,50 +131,8 @@ header {
   color: #8495af;
   margin-bottom: 9px;
 }
-h1 {
-  font-size: 30px;
-  line-height: 1.25;
-  letter-spacing: -0.6px;
-  margin: 0;
-  font-weight: 650;
-}
-.heading-dot {
-  color: #f5d05a;
-}
-.intro {
-  color: var(--muted);
-  margin: 10px 0 0;
-  font-size: 13px;
-}
-.header-actions {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  padding-top: 3px;
-}
-.connection {
-  color: #9be1bc;
-  background: #182c27;
-  border: 1px solid #274238;
-  padding: 7px 10px;
-  border-radius: 6px;
-  font-size: 10px;
-  white-space: nowrap;
-}
-.connection.offline {
-  color: #ffb5ae;
-  background: #352125;
-  border-color: #653237;
-}
-.version {
-  color: #71819a;
-  font-size: 9px;
-  letter-spacing: 1px;
-  padding-top: 9px;
-}
 .session-bar {
+  margin-bottom: 22px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -239,12 +167,6 @@ h1 {
 .session-info strong {
   display: block;
   font-size: 13px;
-}
-.session-info div > span {
-  display: block;
-  color: var(--muted);
-  margin-top: 4px;
-  font-size: 11px;
 }
 .session-controls {
   display: flex;
@@ -295,30 +217,6 @@ input {
   background: #3c282d;
   color: #ffc1b6;
   border-color: #8a514f;
-}
-.notice {
-  display: flex;
-  gap: 11px;
-  align-items: center;
-  padding: 17px 3px 22px;
-  color: #94a4ba;
-  font-size: 11px;
-  line-height: 1.8;
-}
-.notice strong {
-  display: block;
-  color: #b6c6dc;
-  font-weight: 500;
-}
-.info-icon {
-  width: 17px;
-  height: 17px;
-  border: 1px solid #5b6f8b;
-  color: #9db3d4;
-  text-align: center;
-  border-radius: 50%;
-  flex-shrink: 0;
-  line-height: 15px;
 }
 .metrics {
   display: grid;
@@ -673,27 +571,6 @@ tbody tr:hover {
 .event.local .event-msg {
   color: var(--green);
 }
-.protection {
-  display: flex;
-  gap: 9px;
-  padding-top: 19px;
-  border-top: 1px solid var(--line);
-  margin-top: 14px;
-  color: #8094b0;
-}
-.protection > span {
-  font-size: 22px;
-}
-.protection strong {
-  font-size: 11px;
-  font-weight: 500;
-  color: #a5b9d4;
-}
-.protection p {
-  font-size: 10px;
-  line-height: 1.8;
-  margin: 6px 0 0;
-}
 .page-footer {
   display: flex;
   justify-content: space-between;
@@ -858,10 +735,8 @@ dd {
     min-width: 205px;
     max-width: 270px;
   }
-  .protection {
-    display: none;
-  }
   .session-bar {
+    margin-bottom: 22px;
     flex-wrap: wrap;
   }
   .session-controls {
@@ -883,9 +758,6 @@ dd {
     margin-left: 200px;
     width: calc(100% - 200px);
     padding: 25px 20px;
-  }
-  .header-actions .version {
-    display: none;
   }
   .metrics {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -912,7 +784,6 @@ dd {
   }
   .brand > div,
   .nav-title,
-  .sidebar-bottom,
   .nav b {
     display: none;
   }
@@ -931,15 +802,6 @@ dd {
     margin-left: 64px;
     width: calc(100% - 64px);
     padding: 22px 14px;
-  }
-  h1 {
-    font-size: 26px;
-  }
-  header {
-    flex-direction: column;
-  }
-  .header-actions {
-    justify-content: flex-start;
   }
   .metrics {
     gap: 8px;
@@ -961,10 +823,18 @@ dd {
   .search input {
     width: 100%;
   }
-  .intro {
-    font-size: 12px;
-  }
-  .notice {
-    font-size: 10px;
-  }
+}
+
+.session-led.offline {
+  background: #f5968c;
+  box-shadow: 0 0 0 5px #3c282f;
+}
+.badge.restoring {
+  color: #a2beff;
+  background: #253652;
+}
+.dialog-error {
+  color: #ffb0a6;
+  font-size: 12px;
+  margin: 16px 0 0;
 }
