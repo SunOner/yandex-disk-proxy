@@ -40,6 +40,7 @@ const context = vm.createContext({
   AbortSignal,
   queueMicrotask,
   Toasts: { show() {}, problem() {} },
+  MeterBoard: { update() {}, setConnected() {} },
   setTimeout() {},
   clearTimeout() {},
   setInterval() {},

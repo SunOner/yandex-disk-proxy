@@ -24,6 +24,7 @@ const context = vm.createContext({
   fetch(url){return new Promise((resolve,reject)=>requests.push({url,resolve,reject}));},
   rendered,
   Toasts:{show(){},problem(){}},
+  MeterBoard:{update(){},setConnected(){}},
 });
 const state = phase => ({session:{phase},mode:'defer',pending:1,pending_bytes:100,counts:{local:2},downloads:{count:1,bytes:10,since:'2026-01-01T00:00:00Z'},counters:{},root:'disk',events:[],nonce:'local-test'});
 const tick = () => new Promise(resolve=>setImmediate(resolve));

@@ -329,14 +329,12 @@ async function refresh() {
     snapshot = await response.json();
     connected = true;
     sessionView(snapshot);
-    $("metric-pending").textContent = number(snapshot.pending);
     $("nav-count").textContent = number(snapshot.pending);
     $("metric-size").textContent =
       bytes(snapshot.pending_bytes) + " осталось сохранить";
     $("metric-local").textContent =
       "Всего на ПК: " + number(snapshot.counts.local);
     const d = snapshot.downloads;
-    $("metric-downloaded").textContent = number(d.count);
     $("nav-downloaded").textContent = number(d.count);
     $("metric-downloaded-size").textContent =
       bytes(d.bytes) +
@@ -347,9 +345,39 @@ async function refresh() {
         hour: "2-digit",
         minute: "2-digit",
       });
-    $("metric-errors").textContent = number(snapshot.counters.http500);
-    $("metric-deferred").textContent = number(snapshot.counts.deferred);
-    $("metric-network").textContent = bytes(snapshot.counters.network_bytes);
+    MeterBoard.update(
+      {
+        pending: {
+          text: number(snapshot.pending),
+          value: snapshot.pending,
+          detail: $("metric-size").textContent,
+        },
+        downloaded: {
+          text: number(d.count),
+          value: d.count,
+          detail:
+            $("metric-downloaded-size").textContent +
+            " · " +
+            $("metric-local").textContent,
+        },
+        errors: {
+          text: number(snapshot.counters.http500),
+          value: snapshot.counters.http500 || 0,
+          detail: "Ответы Яндекса за запуск панели",
+        },
+        deferred: {
+          text: number(snapshot.counts.deferred),
+          value: snapshot.counts.deferred || 0,
+          detail: "Временно снята отметка хранения",
+        },
+        network: {
+          text: bytes(snapshot.counters.network_bytes),
+          value: snapshot.counters.network_bytes || 0,
+          detail: "Учтённые потоки, включая повторы",
+        },
+      },
+      $("session-title").textContent,
+    );
     $("root-path").textContent =
       snapshot.root || "Папка синхронизации ещё не выбрана";
     renderEvents(snapshot.events);
@@ -390,6 +418,7 @@ async function refresh() {
     } else refreshQueued = true;
   } catch (e) {
     connected = false;
+    MeterBoard.setConnected(false);
     Toasts.problem(
       "connection",
       "Не удалось обновить список файлов. " + e.message,

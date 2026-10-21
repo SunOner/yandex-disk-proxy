@@ -109,7 +109,29 @@
           <span>ОТЛОЖЕНО</span><strong id="metric-deferred">0</strong
           ><small>временно снята отметка хранения</small>
         </article>
-        <article>
+        <article class="metric-network-card">
+          <button
+            id="open-board"
+            class="metric-expand"
+            type="button"
+            aria-label="Счётчики на весь экран"
+            aria-controls="metrics-board"
+            aria-expanded="false"
+            title="Счётчики на весь экран"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4" />
+            </svg>
+          </button>
           <span>ПЕРЕДАНО ПО СЕТИ</span><strong id="metric-network">0 Б</strong
           ><small>учтённые потоки, включая повторы</small>
         </article>
@@ -272,8 +294,72 @@
         </button>
       </div>
     </dialog>
+    <section
+      id="metrics-board"
+      class="metrics-board"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="board-title"
+      hidden
+    >
+      <header class="board-header">
+        <div>
+          <h1 id="board-title">Загрузки Диска</h1>
+          <p id="board-status">Ожидание данных</p>
+        </div>
+        <button id="close-board" class="button board-close" type="button">
+          <svg
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            aria-hidden="true"
+          >
+            <path d="M4 9h5V4m6 0v5h5M9 20v-5H4m11 5v-5h5" />
+          </svg>
+          К файлам <kbd>Esc</kbd>
+        </button>
+      </header>
+      <div class="board-primary">
+        <article class="board-card">
+          <h2>Осталось скачать</h2>
+          <strong id="board-pending">—</strong>
+          <p id="board-pending-detail">Ожидание данных</p>
+        </article>
+        <article class="board-card board-downloads">
+          <h2>Новые загрузки</h2>
+          <strong id="board-downloaded">—</strong>
+          <p id="board-downloaded-detail">Ожидание данных</p>
+        </article>
+      </div>
+      <div class="board-secondary">
+        <article class="board-card board-errors">
+          <h2>Ответы 500</h2>
+          <strong id="board-errors">—</strong>
+          <p id="board-errors-detail"></p>
+        </article>
+        <article class="board-card board-deferred">
+          <h2>Отложено</h2>
+          <strong id="board-deferred">—</strong>
+          <p id="board-deferred-detail"></p>
+        </article>
+        <article class="board-card">
+          <h2>Передано по сети</h2>
+          <strong id="board-network">—</strong>
+          <p id="board-network-detail"></p>
+        </article>
+      </div>
+      <footer class="board-footer">
+        <span id="board-updated">Ожидание данных</span
+        ><span id="board-mode">Esc — вернуться к файлам</span>
+      </footer>
+    </section>
     <script src="/list-motion.js"></script>
     <script src="/toasts.js"></script>
+    <script src="/meters.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>
