@@ -1,119 +1,64 @@
 # Yandex Disk Proxy
 
-**English** · [Русский](README.ru.md)
+[Русский](README.ru.md)
+
+A local dashboard for the Yandex Disk Windows client. See which files have downloaded, which are still waiting and which fail with errors.
+
+I built this project when some files on my Disk became unavailable. The official client did not provide enough detail to tell what was still downloading and what was stuck. This panel shows the status of individual files, request logs and download history to help understand synchronization problems.
 
 ## Run
 
-1. Download **YandexDiskProxy.exe** from the [latest release](https://github.com/SunOner/yandex-disk-proxy/releases/latest).
-2. Run it. Python and dependency installation are not required.
-3. In **http://127.0.0.1:18765**, turn on the switch beside the proxy status. If the paths were not detected, select the sync folder and `YandexDisk4.exe` using **Browse…**, then turn on the switch again.
-4. Approve the certificate on first use. The same approved certificate is reused on subsequent starts.
+Requires Windows 10/11 x64 and Yandex Disk 4.
 
-Keep the console open. The proxy runs until stopped manually; closing the browser tab does not stop it. Windows 10/11 x64; unsigned EXE. Tested on Windows 11 with Yandex Disk 4.28.6.5804.
+1. Download **YandexDiskProxy.exe** from the [latest release](https://github.com/SunOner/yandex-disk-proxy/releases/latest) and run it. Python is not required.
+2. Open the panel at **http://127.0.0.1:18765** and turn on the proxy switch.
+3. If the paths were not detected, select the sync folder and `YandexDisk4.exe` using **Browse…**, then turn on the switch again.
+4. Approve the certificate on first use. It is passed only to the Disk process; the system proxy settings remain unchanged. No additional account login is needed.
 
-## Language and preferences
+Keep the console open while using the proxy. The browser tab can be closed.
 
-English is the default. The **English / Русский** flag menu is in the bottom-left corner of every page and on the fullscreen dashboard. Switching languages does not reload the page. The browser remembers the selection and updates other open tabs of this panel.
+## Handling errors
 
-The browser also remembers file views and journal filters. Search text, request contents and token visibility are not saved. Tokens are hidden whenever a page opens. Clearing site data restores English and the default preferences.
-
-## Modes
+The panel tracks files marked **Keep on this computer**.
 
 | Mode | Behaviour |
 | --- | --- |
-| Defer files | After HTTP 500, temporarily removes the keep-on-PC flag from an unchanged, fully cloud-only file. Repeated requests receive a local HTTP 503 with `Retry-After`. |
+| Defer files | Temporarily removes the keep-on-PC flag after HTTP 500 so the client can move on to other files. |
 | Limit retries | Delays repeated requests without changing keep-on-PC flags. |
 | Observe | Records events without changing requests or file flags. |
 
-Switching away from deferral returns deferred files to the queue. Only files marked **Keep on this computer** are selected. Partially downloaded and modified files are not deferred. The proxy cannot restore unavailable server data or turn a failed download into a successful one.
+Partially downloaded and modified files are not deferred. Switching out of deferral mode or stopping the proxy restores the original flags. The proxy cannot recover data that Yandex servers do not return.
 
-The queue and remaining size are refreshed from Windows metadata every 10 seconds. Newly selected folders, removed flags and deleted files are picked up without restarting. Files temporarily deferred by the proxy remain in the queue.
+**Requests & logs** shows request details and errors. **Monitoring** shows download and network history; statistics survive restarts.
 
-**New downloads** lists confirmed native downloads newest first, with the Windows confirmation time. **Show more** reveals another 60 entries and keeps already expanded rows. Direct downloads are counted separately. Network traffic includes retries.
+## Direct downloads
 
-The panel follows server change notifications instead of redrawing every two seconds. Bursts are combined into bounded updates; unchanged rows stay attached. New entries and existing rows slide together. In a scrolled list, the reading position stays fixed. Hidden tabs suspend updates and resynchronize when reopened. If the event stream is unavailable, polling resumes about every five seconds. Journal pause and reduced-motion settings are respected.
+Use **Download…** beside a file or open **Direct downloads** to try a fresh Yandex link, an existing URL or a browser download.
 
-Counter digits roll when their values change. The **⛶** button opens a fullscreen dashboard; **Esc** or **Back to files** returns to the list. If browser fullscreen is unavailable, the dashboard fills the window. Last values and their timestamp remain visible when disconnected. Reduced-motion settings are respected.
-
-## Previews
-
-File lists show small previews for supported images, videos and PDFs when Yandex returns one. Only visible rows request a 96×96 preview, using the captured client session after its account is verified. No additional login is needed. Missing previews keep the extension icon; original files and local placeholders are never read for thumbnails.
-
-Previews use at most two concurrent requests, a five-minute RAM cache limited to 128 entries / 8 MiB, and a 256 KiB limit per image. Image bytes, signed preview links and credentials are not saved to disk. The browser receives only image bytes through the local backend. Preview requests are labelled separately in diagnostics and do not count as completed downloads.
-
-## Monitoring and saved statistics
-
-**Monitoring ↗** opens six interactive charts: network speed, confirmed downloads, HTTP requests, HTTP/TLS errors, remaining files and request duration. Choose a period from one hour to three years; point at a chart or use the arrow keys to inspect a time. The browser remembers the period.
-
-Counters and history survive restarts. Existing confirmed downloads are imported with their recorded timestamps; network and queue measurements start with this version. Gaps represent missing measurements, including time when the program was closed.
-
-SQLite stores only numeric totals and time buckets in `runtime/statistics/<folder hash>.sqlite3` under the data directory. Each sync folder has a separate database. There are two tables, at most 8,299 time buckets and a 16 MiB database-file limit; SQLite's temporary journal is additional. Old detail expires automatically:
-
-| Resolution | Retention |
-| --- | --- |
-| 10 seconds | 6 hours |
-| 1 minute | 2 days |
-| 1 hour | 90 days |
-| 1 day | 3 years |
-
-Lifetime totals remain. Checkpoints run every five seconds and before exit; a crash can lose the latest five seconds of measurements. URLs, file names, tokens and request bodies are excluded from this database. Request journals keep their existing separate rotation limits.
+The direct queue saves verified files to `%USERPROFILE%\Downloads\Yandex-Recovery\<Disk folder>`. These files are separate from the sync folder and are counted separately from client downloads. A direct link may also fail if the server cannot return the file.
 
 ## Stop and recover
 
-Turn off the proxy switch or close the console. The proxy restores keep-on-PC flags and restarts Disk directly. If recovery fails, use the same switch to retry restoration. After a power failure, run the EXE again or use:
+Turn off the proxy switch or close the console. The app restores deferred files to the queue and restarts Disk without the proxy. If restoration fails, use the switch to retry. After an interrupted session, run the EXE again or use:
 
 ```powershell
 .\YandexDiskProxy.exe --recover
 ```
 
-`--stop` stops the current session. There is no automatic startup at Windows sign-in.
+## Local data
 
-## Certificate and local data
+Settings, certificates, statistics and logs are stored in `%LOCALAPPDATA%\YandexDiskProxy`. Keep this folder until recovery completes.
 
-Each installation creates its own certificate. After approval in the panel, it is passed only to the Disk process through `SSL_CERT_FILE`. There is no Windows certificate-store import or store-selection dialog. Stopping restarts Disk without these parameters. Only the Disk process uses the proxy; the system proxy is unchanged. Upstream certificate verification remains enabled. No new account login is required.
+Tokens are hidden by default. Saved logs and diagnostic exports mask credentials; file names and paths remain. File contents are not logged. Old logs rotate automatically.
 
-Recovery of an unfinished session from an older version removes only the certificate installed by that session. Certificate availability and the approved fingerprint are checked every 15 seconds. The panel can restart Disk with the same certificate after a client TLS failure. Client and upstream TLS errors are shown separately.
-
-The EXE stores settings, its key and journals in **`%LOCALAPPDATA%\YandexDiskProxy`**. Keep this directory until recovery completes; do not share it.
-
-## Requests and diagnostics
-
-**Requests and journal ↗** opens methods, URLs, headers, responses, timings and TLS errors in another tab. Local HTTP 503 responses are labelled separately from upstream responses. Search, error and protocol filters, unusual-operation filters and pause controls are available. Action results use animated toasts with keyboard and hover pause.
-
-**Hide tokens** is enabled by default. Turning it off reveals the selected request's original headers from this run's memory. The setting resets when the page opens. Disk journals and diagnostic exports always mask tokens, cookies, query parameters and signed download URLs. After restarting, only masked records remain.
-
-The journal records HTTP methods and versions, transferred bytes, connection and TLS timing, ALPN, connection IDs, redirect relationships, retries, cancellations, empty or incomplete responses and WebSocket message counts and sizes. Request, response, file and WebSocket message bodies are never recorded. Connections outside the existing decryption list expose only network metadata; that list is not expanded.
-
-Selected-file events include changes to keep-on-PC flags and sizes, missing or moved paths, renewed download requirements, deferral, restoration and completed downloads. These are observations from Windows metadata and do not attribute an action to the user or cloud service.
-
-Up to 5,000 records and 32 MB are retained in memory. Rotation limits: requests and operations use four 10 MB files; events use four 2 MB files; summary checkpoints use two 1 MB files. The main page shows recent events; the journal shows up to 400. The console contains startup messages and the panel address.
-
-**Operation summary** retains counts, errors, retries, durations and bytes across rotation and restarts, with the period start displayed. Evicted records and capture gaps are reported separately. Requests unfinished at restart are marked accordingly. Metadata retries are not counted as file downloads; old records without measured body sizes are not assumed empty.
-
-**Download diagnostics** creates a local ZIP with the summary, retained records, rotated journals and file checksums. Exports always mask secrets regardless of the original-header checkbox. Configuration, certificates, keys and bodies are excluded. File names and paths remain. Nothing is uploaded automatically.
-
-## Direct downloads
-
-Open **Direct downloads ↗** or **Download…** beside a file. **Download remaining** queues only remaining files marked for storage on this PC, including files deferred by the current session. Up to four files download concurrently, smaller files first. Interrupted downloads resume from the saved range; the queue moves on after three failed attempts. Pause, stop and individual retry controls are available.
-
-Results go to **`%USERPROFILE%\Downloads\Yandex-Recovery\<Disk folder>`**, preserving subfolders. Files receive their final names after size and API checksum verification. Existing different files are not overwritten; incomplete files use `.part`. Click **Resume** after restarting. Native cloud placeholders are not replaced and files are not uploaded to the cloud.
-
-Downloads use the proxied client's existing session; no rclone, separate OAuth app or new login is required. The API account is checked against the selected Disk folder. Authorization and signed URLs remain in memory; only queue state and masked journals are saved. After restarting, the panel waits for a new client request to obtain the session.
-
-In **Disk files**, **Browser** obtains a fresh link; **URL** accepts an existing direct Yandex HTTPS link for the selected file, with checksum verification. Browser downloads use the browser's download folder and do not count towards the verified queue. Storage servers receive signed URLs without account authorization headers.
-
-HTTP 500, empty and interrupted responses can also occur with fresh direct links. Parallel downloads help when the server actually returns file content.
-
-## Source and build
+## Build from source
 
 ```powershell
-py -3.12 bootstrap.py
+py -3.12 -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.venv\Scripts\python.exe -m unittest discover -s tests -v
-Get-ChildItem tests/test_*.cjs | ForEach-Object { node $_.FullName; if ($LASTEXITCODE) { throw "JavaScript test failed" } }
 .venv\Scripts\python.exe build_windows.py
 ```
 
-Output always uses `release\YandexDiskProxy.exe` and `release\SHA256SUMS.txt`, without version subfolders. Keep the same installation path when replacing the EXE so VPN split-tunneling rules continue to match. Add this EXE to your VPN application's bypass list; the proxy's child processes use the same executable. Close the running proxy before replacing it. Source runs store data in `.local`. The EXE includes Python, mitmproxy and dependency licences.
+Output: `release\YandexDiskProxy.exe`. Close the running proxy before replacing it. Keep the same executable path if you use VPN split tunneling.
 
-Independent project, not a Yandex product. [MIT licence](LICENSE).
+Independent project, not affiliated with Yandex. [MIT license](LICENSE).

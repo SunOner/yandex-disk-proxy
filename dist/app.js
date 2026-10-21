@@ -343,50 +343,33 @@ function renderEvents(events) {
 }
 function renderMetrics(state, fresh = true) {
   $("nav-count").textContent = number(state.pending);
-  $("metric-size").textContent =
-    bytes(state.pending_bytes) + I18n.t(" осталось сохранить");
-  $("metric-local").textContent =
-    I18n.t("Всего на ПК: ") + number(state.counts.local);
   const d = state.downloads;
   $("nav-downloaded").textContent = number(d.count);
-  $("metric-downloaded-size").textContent =
-    bytes(d.bytes) +
-    I18n.t(" · с ") +
-    new Date(d.since).toLocaleString(I18n.locale, {
-      day: "2-digit",
-      month: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
   MeterBoard.update(
     {
       pending: {
         text: number(state.pending),
         value: state.pending,
-        detail: $("metric-size").textContent,
+      },
+      remaining: {
+        text: bytes(state.pending_bytes),
+        value: state.pending_bytes || 0,
       },
       downloaded: {
         text: number(d.count),
         value: d.count,
-        detail:
-          $("metric-downloaded-size").textContent +
-          " · " +
-          $("metric-local").textContent,
       },
       errors: {
         text: number(state.counters.http500),
         value: state.counters.http500 || 0,
-        detail: I18n.t("Сохранённые ответы Яндекса"),
       },
       deferred: {
         text: number(state.counts.deferred),
         value: state.counts.deferred || 0,
-        detail: I18n.t("Временно снята отметка хранения"),
       },
       network: {
         text: bytes(state.counters.network_bytes),
         value: state.counters.network_bytes || 0,
-        detail: I18n.t("Учтённые потоки, включая повторы"),
       },
     },
     $("session-title").textContent,

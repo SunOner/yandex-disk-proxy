@@ -1157,6 +1157,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         static = {
             "/": ("index.html", "text/html; charset=utf-8"),
+            "/favicon.svg": ("favicon.svg", "image/svg+xml"),
+            "/favicon.ico": ("favicon.ico", "image/vnd.microsoft.icon"),
             "/app.js": ("app.js", "text/javascript; charset=utf-8"),
             "/list-motion.js": ("list-motion.js", "text/javascript; charset=utf-8"),
             "/thumbnails.js": ("thumbnails.js", "text/javascript; charset=utf-8"),

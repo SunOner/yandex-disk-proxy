@@ -128,7 +128,6 @@ const MeterBoard = (() => {
     if (!latest) return;
     for (const [key, metric] of Object.entries(latest)) {
       paint($("board-" + key), metric.text, metric.value, motion);
-      $("board-" + key + "-detail").textContent = metric.detail;
     }
   }
 

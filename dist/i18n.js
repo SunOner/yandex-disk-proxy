@@ -448,6 +448,7 @@ const I18n = (() => {
     "Восстановить доверие": "Repair certificate",
     "Перезапустить Диск": "Restart Disk",
     "ОСТАЛОСЬ СКАЧАТЬ": "LEFT TO DOWNLOAD",
+    "ОСТАЛОСЬ СОХРАНИТЬ": "LEFT TO SAVE",
     "Считывание списка": "Reading file list",
     "НОВЫЕ ЗАГРУЗКИ": "NEW DOWNLOADS",
     "Всего на ПК: —": "Total on this PC: —",
@@ -504,6 +505,7 @@ const I18n = (() => {
     "Включить прокси": "Start proxy",
     "К файлам": "Back to files",
     "Осталось скачать": "Left to download",
+    "Осталось сохранить": "Left to save",
     "Ответы 500": "HTTP 500 responses",
     Отложено: "Deferred",
     "Прямые загрузки — Yandex Disk Proxy":

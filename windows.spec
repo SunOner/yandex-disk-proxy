@@ -28,5 +28,6 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz, a.scripts, a.binaries, a.datas, [], name='YandexDiskProxy',
     debug=False, bootloader_ignore_signals=False, strip=False, upx=False,
-    console=True, version=str(root / 'windows-version.txt'),
+    console=True, icon=str(root / 'dist/favicon.ico'),
+    version=str(root / 'windows-version.txt'),
 )

@@ -103,12 +103,12 @@ const data = (n, network = "999 КБ", networkValue = 999000) => ({
   pending: {
     text: n.toLocaleString("ru-RU"),
     value: n,
-    detail: "82 ГБ осталось сохранить",
   },
-  downloaded: { text: "212", value: 212, detail: "2,2 ГБ" },
-  errors: { text: "4", value: 4, detail: "Ответы Яндекса" },
-  deferred: { text: "4", value: 4, detail: "Отложены" },
-  network: { text: network, value: networkValue, detail: "Сеть" },
+  remaining: { text: "82 ГБ", value: 82 * 1024 ** 3 },
+  downloaded: { text: "212", value: 212 },
+  errors: { text: "4", value: 4 },
+  deferred: { text: "4", value: 4 },
+  network: { text: network, value: networkValue },
 });
 const update = (...args) => dashboard.update(data(...args), "Прокси включён");
 const reader = (id) => get(id).children[0].textContent;
@@ -283,7 +283,7 @@ async function main() {
   await finishAnimations();
   context.I18n.locale = 'en-GB';
   context.I18n.decimal = '.';
-  const englishData = n => ({...data(n), pending:{text:n.toLocaleString('en-GB'),value:n,detail:'82 GB'},network:{text:'1.1 MB',value:1153434,detail:'Network'}});
+  const englishData = n => ({...data(n), pending:{text:n.toLocaleString('en-GB'),value:n},remaining:{text:'82 GB',value:82 * 1024 ** 3},network:{text:'1.1 MB',value:1153434}});
   dashboard.update(englishData(999), 'Proxy is on');
   await finishAnimations();
   const englishCarry = animations.length;

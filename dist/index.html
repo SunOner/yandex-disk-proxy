@@ -4,40 +4,21 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Yandex Disk Proxy</title>
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
     <aside class="sidebar">
       <div class="brand">
-        <svg
+        <img
           class="brand-icon"
-          viewBox="0 0 48 48"
+          src="/favicon.svg"
           width="44"
           height="44"
+          alt=""
           aria-hidden="true"
-          focusable="false"
-        >
-          <rect
-            x="0.75"
-            y="0.75"
-            width="46.5"
-            height="46.5"
-            rx="14"
-            fill="#1b2532"
-            stroke="#3b4655"
-            stroke-width="1.5"
-          />
-          <g
-            fill="none"
-            stroke="#f5d16a"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M35.4 20.2A12 12 0 1 0 27.8 35.4" stroke-width="3.2" />
-            <circle cx="24" cy="24" r="3.5" stroke-width="2.5" />
-            <path d="M35 25v11m-4-4 4 4 4-4" stroke-width="3.2" />
-          </g>
-        </svg>
+        />
         <div class="brand-name"><span>Yandex</span><span>Disk Proxy</span></div>
       </div>
       <div class="nav-title" data-i18n="ФАЙЛЫ">FILES</div>
@@ -124,6 +105,30 @@
             </option>
             <option value="observe" data-i18n="Наблюдать">Observe</option>
           </select>
+          <button
+            id="open-board"
+            class="board-open-button"
+            type="button"
+            aria-label="Fullscreen counters"
+            aria-controls="metrics-board"
+            aria-expanded="false"
+            title="Fullscreen counters"
+            data-i18n-title="Счётчики на весь экран"
+            data-i18n-aria-label="Счётчики на весь экран"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4" />
+            </svg>
+          </button>
         </div>
       </section>
       <div id="tls-warning" class="tls-warning" hidden>
@@ -148,66 +153,27 @@
       <section class="metrics">
         <article>
           <span data-i18n="ОСТАЛОСЬ СКАЧАТЬ">LEFT TO DOWNLOAD</span
-          ><strong id="metric-pending">—</strong
-          ><small id="metric-size" data-i18n-once="Считывание списка"
-            >Reading file list</small
-          >
+          ><strong id="metric-pending">—</strong>
         </article>
         <article>
+          <span data-i18n="ОСТАЛОСЬ СОХРАНИТЬ">LEFT TO SAVE</span
+          ><strong id="metric-remaining">—</strong>
+        </article>
+        <article class="metric-downloads">
           <span data-i18n="НОВЫЕ ЗАГРУЗКИ">NEW DOWNLOADS</span
-          ><strong id="metric-downloaded">—</strong
-          ><small
-            id="metric-downloaded-size"
-            data-i18n-once="Подтверждено Windows"
-            >Confirmed by Windows</small
-          ><small id="metric-local" data-i18n-once="Всего на ПК: —"
-            >Total on this PC: —</small
-          >
+          ><strong id="metric-downloaded">—</strong>
         </article>
         <article class="metric-error">
           <span data-i18n="ОТВЕТЫ 500">HTTP 500 RESPONSES</span
-          ><strong id="metric-errors">0</strong
-          ><small data-i18n="сохранённые ответы Яндекса"
-            >Recorded Yandex responses</small
-          >
+          ><strong id="metric-errors">0</strong>
         </article>
         <article class="metric-deferred">
           <span data-i18n="ОТЛОЖЕНО">DEFERRED</span
-          ><strong id="metric-deferred">0</strong
-          ><small data-i18n="временно снята отметка хранения"
-            >offline selection temporarily removed</small
-          >
+          ><strong id="metric-deferred">0</strong>
         </article>
-        <article class="metric-network-card">
-          <button
-            id="open-board"
-            class="metric-expand"
-            type="button"
-            aria-label="Fullscreen counters"
-            aria-controls="metrics-board"
-            aria-expanded="false"
-            title="Fullscreen counters"
-            data-i18n-title="Счётчики на весь экран"
-            data-i18n-aria-label="Счётчики на весь экран"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              width="18"
-              height="18"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.7"
-              stroke-linecap="round"
-              aria-hidden="true"
-            >
-              <path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4" />
-            </svg>
-          </button>
+        <article>
           <span data-i18n="ПЕРЕДАНО ПО СЕТИ">NETWORK TRAFFIC</span
-          ><strong id="metric-network" data-i18n-once="0 Б">0 B</strong
-          ><small data-i18n="учтённые потоки, включая повторы"
-            >observed traffic, including retries</small
-          >
+          ><strong id="metric-network" data-i18n-once="0 Б">0 B</strong>
         </article>
       </section>
       <div class="workspace">
@@ -505,33 +471,28 @@
         <article class="board-card">
           <h2 data-i18n="Осталось скачать">Left to download</h2>
           <strong id="board-pending">—</strong>
-          <p id="board-pending-detail" data-i18n-once="Ожидание данных">
-            Waiting for data
-          </p>
+        </article>
+        <article class="board-card">
+          <h2 data-i18n="Осталось сохранить">Left to save</h2>
+          <strong id="board-remaining">—</strong>
         </article>
         <article class="board-card board-downloads">
           <h2 data-i18n="Новые загрузки">New downloads</h2>
           <strong id="board-downloaded">—</strong>
-          <p id="board-downloaded-detail" data-i18n-once="Ожидание данных">
-            Waiting for data
-          </p>
         </article>
       </div>
       <div class="board-secondary">
         <article class="board-card board-errors">
           <h2 data-i18n="Ответы 500">HTTP 500 responses</h2>
           <strong id="board-errors">—</strong>
-          <p id="board-errors-detail"></p>
         </article>
         <article class="board-card board-deferred">
           <h2 data-i18n="Отложено">Deferred</h2>
           <strong id="board-deferred">—</strong>
-          <p id="board-deferred-detail"></p>
         </article>
         <article class="board-card">
           <h2 data-i18n="Передано по сети">Network traffic</h2>
           <strong id="board-network">—</strong>
-          <p id="board-network-detail"></p>
         </article>
       </div>
       <footer class="board-footer">
