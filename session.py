@@ -1,4 +1,4 @@
-"""Owns the temporary CA, proxy, client and reversible pin changes.
+"""Owns client-scoped TLS trust, proxy and reversible pin changes.
 The worker survives closing the panel console long enough to restore the PC.
 """
 
@@ -25,9 +25,7 @@ from winops import (
     PROXY_PY,
     ROOT,
     THUMB,
-    add_ca,
     atomic,
-    ca_present,
     can_defer,
     client_pids,
     created_ticks,
@@ -39,6 +37,13 @@ from winops import (
     set_pin,
     stop_exact,
 )
+
+
+def validate_client_certificate():
+    if settings.read().get("consented_thumbprint") != THUMB:
+        raise ValueError("Подтвердите сертификат Диска в панели")
+    if settings.fingerprint(CA_DIR) != THUMB:
+        raise ValueError("Сертификат Диска изменился после подтверждения")
 
 
 def main():
@@ -56,6 +61,8 @@ def main():
         "proxy_pid": None,
         "client_pid": None,
         "ca_owned": False,
+        "certificate_scope": "client",
+        "certificate_ready": False,
         "client_changed": False,
         "started": time.time(),
         "expires": None,
@@ -154,12 +161,9 @@ def main():
                     raise RuntimeError("Proxy port is already in use")
         atomic(ledger_path, ledger)
         record()
-        # Persist ownership before import, so the recovery path can clean up a partial start.
-        if ca_present():
-            raise RuntimeError("Approved CA is already trusted by another session")
-        record(ca_owned=True, stage="certificate")
-        add_ca()
-        event("ca_added", trusted=ca_present())
+        validate_client_certificate()
+        record(stage="certificate", certificate_ready=True)
+        event("ca_added", scope="client")
         record(stage="proxy")
         env = os.environ.copy()
         env["YDM_SESSION_DIR"] = str(session_dir)
@@ -194,7 +198,7 @@ def main():
             client_pid=client.pid,
             client_created=created_ticks(client.pid),
             phase="active",
-            ca_trusted=ca_present(),
+            certificate_ready=True,
         )
         event("session_active")
         last_sequence = 0
@@ -230,33 +234,16 @@ def main():
                     continue
                 handled_actions[action] = requested
                 try:
-                    if action == "repair_ca":
-                        if (
-                            settings.read().get("consented_thumbprint") != THUMB
-                            or not state["ca_owned"]
-                        ):
-                            raise ValueError("Certificate was not approved for this session")
-                        if not ca_present():
-                            add_ca()
-                        trusted = ca_present()
-                        record(ca_trusted=trusted)
-                        if trusted:
-                            event("ca_restored")
-                        else:
-                            event(
-                                "ca_check_error",
-                                reason="Windows did not confirm the certificate import",
-                            )
-                    else:
-                        if not ca_present():
-                            raise ValueError(
-                                "Restore certificate trust before restarting the client"
-                            )
-                        for pid in client_pids():
-                            stop_exact(pid, CLIENT)
-                        client = launch_client(True)
-                        record(client_pid=client.pid, client_created=created_ticks(client.pid))
-                        event("client_restarted")
+                    validate_client_certificate()
+                    for pid in client_pids():
+                        stop_exact(pid, CLIENT)
+                    client = launch_client(True)
+                    record(
+                        client_pid=client.pid,
+                        client_created=created_ticks(client.pid),
+                        certificate_ready=True,
+                    )
+                    event("client_restarted")
                 except Exception as exc:
                     event("proxy_log", message=redact_text(str(exc)))
             for command in control.get("commands", []):
@@ -291,11 +278,12 @@ def main():
                 last_ping = time.monotonic()
             if time.monotonic() - last_trust >= 15:
                 try:
-                    trusted = ca_present()
-                    if state.get("ca_trusted") != trusted:
-                        event("ca_restored" if trusted else "ca_missing")
-                    record(ca_trusted=trusted, ca_checked_at=time.time())
-                except OSError as exc:
+                    validate_client_certificate()
+                    if state.get("certificate_ready") is False:
+                        event("ca_restored")
+                    record(certificate_ready=True, ca_checked_at=time.time())
+                except (OSError, ValueError) as exc:
+                    record(certificate_ready=False, ca_checked_at=time.time())
                     event("ca_check_error", reason=type(exc).__name__)
                 last_trust = time.monotonic()
             time.sleep(0.25)

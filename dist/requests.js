@@ -352,13 +352,18 @@ async function refresh() {
     $("export").disabled = false;
     $("connection").textContent = "Панель подключена";
     const trust =
-      state.session.ca_trusted === false
-        ? state.tls?.client?.ok
-          ? "TLS Диска установлен; сертификат передан приложению"
-          : "Сертификат не найден в Windows"
-        : state.session.ca_trusted
-          ? "Сертификат в доверенных"
-          : "Прокси выключен";
+      state.session.certificate_scope === "client" &&
+      state.session.phase === "active"
+        ? state.session.certificate_ready
+          ? "Сертификат передан только Диску"
+          : "Файл сертификата недоступен или изменён"
+        : state.session.ca_trusted === false
+          ? state.tls?.client?.ok
+            ? "TLS Диска установлен; сертификат передан приложению"
+            : "Сертификат не найден в Windows"
+          : state.session.ca_trusted
+            ? "Сертификат в доверенных"
+            : "Прокси выключен";
     const side = (name) =>
       state.tls?.[name]
         ? state.tls[name].ok

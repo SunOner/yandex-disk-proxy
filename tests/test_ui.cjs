@@ -65,6 +65,15 @@ async function main() {
   vm.runInContext("sessionView({session:{phase:'active',ca_trusted:false},tls:{client:{ok:false}},mode:'defer'})",context);
   assert.equal(element('tls-warning').hidden,false);
   assert.equal(element('repair-ca').hidden,false);
+  vm.runInContext("sessionView({session:{phase:'active',certificate_scope:'client',certificate_ready:true,ca_trusted:false},mode:'defer'})",context);
+  assert.equal(element('tls-warning').hidden,true,'Client-scoped trust must not require a Windows store entry');
+  assert.equal(element('repair-ca').hidden,true);
+  vm.runInContext("sessionView({session:{phase:'active',certificate_scope:'client',certificate_ready:true},tls:{client:{ok:false}},mode:'defer'})",context);
+  assert.equal(element('restart-client').hidden,false);
+  assert.equal(element('repair-ca').hidden,true);
+  vm.runInContext("sessionView({session:{phase:'active',certificate_scope:'client',certificate_ready:false},mode:'defer'})",context);
+  assert.equal(element('tls-warning').hidden,false);
+  assert.equal(element('tls-message').textContent,'Файл сертификата Диска недоступен или изменён.');
   vm.runInContext("sessionView({session:{phase:'active'},mode:'defer',configured:true,inventory:{scanning:true}})",context);
   assert.equal(element('rescan').disabled,true);
   assert.equal(element('rescan').textContent,'Обновление списка…');

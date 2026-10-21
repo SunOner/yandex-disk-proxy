@@ -635,7 +635,9 @@ class Model:
                 "client_direct",
             ):
                 messages = {
-                    "ca_added": "Сертификат установлен в Windows"
+                    "ca_added": "Сертификат передан только процессу Диска"
+                    if event.get("scope") == "client"
+                    else "Сертификат установлен в Windows"
                     if event.get("trusted")
                     else "Сертификат передан Диску; в хранилище Windows не обнаружен",
                     "proxy_ready": "Прокси слушает только 127.0.0.1:18080",
@@ -1134,9 +1136,7 @@ def main():
     threading.Thread(target=ACTIVE.monitor, daemon=True).start()
     threading.Thread(target=ACTIVE.inventory_loop, daemon=True).start()
     print(
-        "\nЯНДЕКС ДИСК · ПРОКСИ\n"
-        + URL
-        + "\nCtrl+C: остановить, убрать сертификат и восстановить клиент.\n",
+        "\nЯНДЕКС ДИСК · ПРОКСИ\n" + URL + "\nCtrl+C: остановить прокси и восстановить клиент.\n",
         flush=True,
     )
     if not args.no_browser:

@@ -1,9 +1,7 @@
 import ctypes as C
-import hashlib
 import json
 import os
 import re
-import ssl
 import subprocess
 import sys
 import tempfile
@@ -279,39 +277,12 @@ def ca_present(thumb=None):
         crypt.CertCloseStore(store, 0)
 
 
-def add_ca():
-    der = ssl.PEM_cert_to_DER_cert((CA_DIR / "mitmproxy-ca-cert.pem").read_text(encoding="utf-8"))
-    if hashlib.sha1(der).hexdigest().upper() != THUMB:
-        raise ValueError("CA fingerprint differs from the approved certificate")
-    if ca_present():
-        raise ValueError("Diagnostic CA is already trusted outside this session")
-    cert = CA_DIR / "approved-diagnostic-ca.cer"
-    cert.write_bytes(der)
-    # Windows may require a native protected-root confirmation. Keep it visible.
-    process = runtime.external_popen(
-        ["certutil.exe", "-user", "-addstore", "Root", str(cert)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        creationflags=subprocess.CREATE_NEW_CONSOLE,
-    )
-    try:
-        output, _ = process.communicate(timeout=180)
-        code = process.returncode
-    except subprocess.TimeoutExpired:
-        process.terminate()
-        process.wait(timeout=5)
-        raise TimeoutError("Windows certificate confirmation timed out")
-    if code:
-        message = output.decode("cp866", errors="replace")[-1100:]
-        raise OSError("Windows CA import: exit=" + str(code) + "; " + message)
-
-
 def remove_ca(thumb=None):
     thumb = thumb or THUMB
     if not re.fullmatch("[0-9A-F]{40}", thumb):
         raise ValueError("Некорректный отпечаток сертификата")
     runtime.external_run(
-        ["certutil.exe", "-user", "-delstore", "Root", thumb],
+        ["certutil.exe", "-user", "-silent", "-delstore", "Root", thumb],
         capture_output=True,
         timeout=20,
         creationflags=NO_WINDOW,

@@ -107,8 +107,12 @@ function sessionView(s) {
     phase === "cleanup_required" ? "↺ Восстановить" : "▶ Включить прокси";
   $("stop").disabled = !(active || phase === "starting");
   if (document.activeElement !== $("mode")) $("mode").value = s.mode;
+  const clientScope = s.session.certificate_scope === "client";
   const missing =
-    active && s.session.ca_trusted === false && s.tls?.client?.ok !== true;
+    active &&
+    (clientScope
+      ? s.session.certificate_ready === false
+      : s.session.ca_trusted === false && s.tls?.client?.ok !== true);
   const clientError = active && s.tls?.client?.ok === false;
   const upstreamError = active && s.tls?.upstream?.ok === false;
   const problem =
@@ -119,13 +123,15 @@ function sessionView(s) {
     s.session.error_detail;
   $("tls-warning").hidden = !problem;
   $("tls-message").textContent = missing
-    ? "Сертификат больше не находится в доверенных Windows."
+    ? clientScope
+      ? "Файл сертификата Диска недоступен или изменён."
+      : "Сертификат больше не находится в доверенных Windows."
     : clientError
       ? "Диск отклонил TLS-соединение. Причина — в журнале."
       : upstreamError
         ? "Ошибка TLS между прокси и Яндексом. Причина — в журнале."
         : s.log_error || s.session.error_detail || "";
-  $("repair-ca").hidden = !missing;
+  $("repair-ca").hidden = !missing || clientScope;
   $("restart-client").hidden = !clientError || missing;
 }
 function showDetails(row) {
