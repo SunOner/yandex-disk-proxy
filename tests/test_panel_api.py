@@ -63,11 +63,41 @@ class PanelAccess(unittest.TestCase):
                         self.assertNotIn("SECRET_", text)
                     raw = post({"Origin": url, "X-Panel-Nonce": server.NONCE})
                     self.assertEqual(raw["request_headers"][0][1], "Bearer SECRET_HEADER")
+
+                    def thumbnail(context, headers):
+                        return urllib.request.urlopen(
+                            urllib.request.Request(
+                                url + "/api/thumbnail",
+                                data=json.dumps({"context": context, "file": "image.jpg"}).encode(),
+                                headers=headers,
+                            ),
+                            timeout=3,
+                        )
+
+                    with patch.object(
+                        model.thumbnails, "get", return_value=(b"\xff\xd8\xff", "image/jpeg")
+                    ) as image:
+                        with self.assertRaises(urllib.error.HTTPError) as error:
+                            thumbnail(model.preview_context, {})
+                        self.assertEqual(error.exception.code, 403)
+                        headers = {"Origin": url, "X-Panel-Nonce": server.NONCE}
+                        with self.assertRaises(urllib.error.HTTPError) as error:
+                            thumbnail("old-folder-context", headers)
+                        self.assertEqual(error.exception.code, 409)
+                        image.assert_not_called()
+                        with thumbnail(model.preview_context, headers) as response:
+                            self.assertEqual(response.read(), b"\xff\xd8\xff")
+                            self.assertEqual(response.headers["Content-Type"], "image/jpeg")
+                            self.assertEqual(
+                                response.headers["Cross-Origin-Resource-Policy"], "same-origin"
+                            )
+                            self.assertEqual(response.headers["Cache-Control"], "no-store")
                     for route in (
                         "/requests",
                         "/requests.js",
                         "/i18n.js",
                         "/list-motion.js",
+                        "/thumbnails.js",
                         "/live.js",
                         "/monitoring",
                         "/monitoring.js",

@@ -70,15 +70,31 @@ def download_url(value):
     return value
 
 
+def preview_url(value):
+    download_url(value)
+    u = urllib.parse.urlsplit(value)
+    path = urllib.parse.unquote(u.path)
+    if (
+        u.hostname != "downloader.disk.yandex.ru"
+        or not u.path.startswith("/preview/")
+        or "\\" in path
+        or ".." in path.split("/")
+        or any(ord(char) < 32 for char in path)
+    ):
+        raise ValueError("Некорректная ссылка миниатюры")
+    return value
+
+
 class Transport:
     """Per-thread connection reuse; environment/system proxies are never consulted."""
 
-    def __init__(self, emit):
+    def __init__(self, emit, client="recovery", timeout=12):
         self.local = threading.local()
         self.context = ssl.create_default_context(cafile=certifi.where())
         self.emit = emit
+        self.client, self.timeout = client, timeout
 
-    def request(self, url, headers, rel=None):
+    def request(self, url, headers, rel=None, *, preview=False):
         u = urllib.parse.urlsplit(url)
         allowed = u.hostname == "cloud-api.yandex.net" and u.path in (
             "/v1/disk",
@@ -89,15 +105,18 @@ class Transport:
             if u.scheme != "https" or u.username or u.password or u.port not in (None, 443):
                 raise ValueError("Некорректный адрес API")
         else:
-            download_url(url)
-            if any(k.lower() in ("authorization", "cookie") for k in headers):
+            (preview_url if preview else download_url)(url)
+            if any(
+                k.lower() == "cookie" or k.lower() == "authorization" and not preview
+                for k in headers
+            ):
                 raise ValueError("Авторизация не передаётся серверам хранения")
         old = getattr(self.local, "connection", None)
         if old and old.host != u.hostname:
             old.close()
             old = None
         connection = old or http.client.HTTPSConnection(
-            u.hostname, timeout=12, context=self.context
+            u.hostname, timeout=self.timeout, context=self.context
         )
         self.local.connection = connection
         identity, started = secrets.token_hex(12), time.time()
@@ -105,7 +124,7 @@ class Transport:
             "id": identity,
             "type": "http",
             "phase": "request",
-            "client": "recovery",
+            "client": self.client,
             "route": "direct",
             "bytes_measured": True,
             "timestamp": started,
@@ -129,7 +148,7 @@ class Transport:
                 record={
                     "id": identity,
                     "phase": "error",
-                    "client": "recovery",
+                    "client": self.client,
                     "duration_ms": round((time.time() - started) * 1000),
                     "error": redact_text(str(exc)),
                 },
@@ -150,7 +169,7 @@ class Transport:
             record={
                 "id": identity,
                 "phase": "response",
-                "client": "recovery",
+                "client": self.client,
                 "status": response.status,
                 "reason": response.reason,
                 "source": "upstream",
@@ -167,7 +186,7 @@ class Transport:
             record={
                 **response.capture_context,
                 "id": response.capture_id,
-                "client": "recovery",
+                "client": self.client,
                 "phase": "error" if error else "complete",
                 "received_bytes": received,
                 "duration_ms": round((time.time() - response.capture_started) * 1000),
@@ -218,6 +237,21 @@ class Transport:
             destination = urllib.parse.urljoin(url, response.getheader("Location", ""))
             self.finish(response, close=True)
             url = download_url(destination)
+        raise DownloadError("Слишком много перенаправлений")
+
+    def open_preview(self, url, authorization, rel):
+        for _ in range(3):
+            response = self.request(
+                preview_url(url),
+                {"Authorization": authorization, "Accept-Encoding": "identity"},
+                rel,
+                preview=True,
+            )
+            if response.status not in (301, 302, 303, 307, 308):
+                return response
+            destination = urllib.parse.urljoin(url, response.getheader("Location", ""))
+            self.finish(response, close=True)
+            url = preview_url(destination)
         raise DownloadError("Слишком много перенаправлений")
 
 

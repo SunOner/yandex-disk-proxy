@@ -93,7 +93,20 @@
     <main>
       <section class="session-bar">
         <div class="session-info">
-          <span id="session-led" class="session-led"></span>
+          <button
+            id="proxy-toggle"
+            class="proxy-toggle"
+            type="button"
+            role="switch"
+            aria-checked="false"
+            aria-busy="false"
+            aria-label="Proxy"
+            data-i18n-aria-label="Прокси"
+            aria-describedby="session-title"
+            disabled
+          >
+            <span class="proxy-toggle-thumb" aria-hidden="true"></span>
+          </button>
           <div>
             <strong id="session-title" data-i18n-once="Прокси выключен"
               >Proxy is off</strong
@@ -109,27 +122,8 @@
             <option value="cooldown" data-i18n="Ограничивать повторы">
               Limit retries
             </option>
-            <option value="observe" data-i18n="Наблюдать">
-              Observe
-            </option></select
-          ><button
-            id="start"
-            class="button primary"
-            data-i18n-once="▶ Включить прокси"
-          >
-            ▶ Start proxy</button
-          ><button
-            id="stop"
-            class="button stop"
-            disabled
-            data-i18n="■ Остановить и восстановить"
-          >
-            ■ Stop and restore</button
-          ><button id="rescan" class="button" data-i18n-once="Обновить список">
-            Refresh files</button
-          ><button id="settings" class="button" data-i18n="Настройка">
-            Settings
-          </button>
+            <option value="observe" data-i18n="Наблюдать">Observe</option>
+          </select>
         </div>
       </section>
       <div id="tls-warning" class="tls-warning" hidden>
@@ -551,6 +545,7 @@
     </section>
     <script src="/i18n.js"></script>
     <script src="/list-motion.js"></script>
+    <script src="/thumbnails.js"></script>
     <script src="/live.js"></script>
     <script src="/toasts.js"></script>
     <script src="/meters.js"></script>

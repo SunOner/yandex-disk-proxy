@@ -126,7 +126,15 @@ function render(data) {
   for (const row of data.rows) {
     const tr = el("tr");
     const file = el("td");
-    file.append(el("div", "recovery-path", row.path));
+    const title = el("div", "file-title");
+    const icon = el(
+      "span",
+      "file-icon",
+      row.path.split(".").pop().slice(0, 4).toUpperCase(),
+    );
+    Thumbnails.decorate(icon, row);
+    title.append(icon, el("div", "recovery-path", row.path));
+    file.append(title);
     if (row.error) file.append(el("div", "recovery-error", I18n.t(row.error)));
     tr.append(file, el("td", row.status, labels[row.status] || row.status));
     const size = el(
@@ -185,6 +193,7 @@ function render(data) {
     entries,
     JSON.stringify([view, query, data.offset]),
   );
+  Thumbnails.sync($("rows"));
   const total = data.filtered ?? data.total;
   offset = data.offset;
   $("empty").hidden = data.rows.length > 0;
@@ -195,6 +204,7 @@ function render(data) {
   $("next-page").disabled = offset + data.rows.length >= total;
 }
 function renderState(s, fresh = true) {
+  Thumbnails.configure(s);
   nonce = s.nonce;
   if (fresh) connected = true;
   const r = s.recovery,

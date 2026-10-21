@@ -7,6 +7,8 @@ let snapshot = null,
   busy = false,
   refreshQueued = false,
   connected = false,
+  loadingMore = false,
+  sessionPending = null,
   visibleDownloads = 60,
   downloadedTotal = null;
 let lastRows = null,
@@ -75,11 +77,27 @@ async function action(path, data = {}) {
   return value;
 }
 function sessionView(s) {
-  const phase = s.session.phase,
+  const phase = sessionPending
+      ? sessionPending === "start"
+        ? "starting"
+        : "stopping"
+      : s.session.phase,
     active = phase === "active",
-    working = ["starting", "stopping"].includes(phase);
-  $("session-led").className =
-    "session-led" + (active ? " active" : working ? " working" : "");
+    working = ["starting", "stopping"].includes(phase),
+    recovery = phase === "cleanup_required",
+    enabled = active || phase === "starting" || recovery,
+    toggle = $("proxy-toggle");
+  toggle.className = "proxy-toggle" + (recovery ? " recovery" : "");
+  toggle.ariaChecked = String(enabled);
+  toggle.ariaBusy = String(working);
+  toggle.disabled = !connected || !!sessionPending || phase === "stopping";
+  toggle.title = I18n.t(
+    recovery
+      ? "Восстановить Диск"
+      : enabled
+        ? "Выключить прокси и восстановить Диск"
+        : "Включить прокси",
+  );
   $("session-title").textContent = active
     ? I18n.t("Прокси включён")
     : phase === "starting"
@@ -89,23 +107,7 @@ function sessionView(s) {
         : phase === "cleanup_required"
           ? I18n.t("Ошибка восстановления")
           : I18n.t("Прокси выключен");
-  $("start").disabled = active || working;
-  $("settings").disabled = active || working;
-  $("rescan").disabled = !!s.inventory?.scanning || !s.configured;
-  $("rescan").textContent = s.inventory?.scanning
-    ? I18n.t("Обновление списка…")
-    : I18n.t("Обновить список");
-  $("rescan").title = s.inventory?.updated_at
-    ? I18n.t("Последнее обновление: ") +
-      new Date(s.inventory.updated_at * 1000).toLocaleTimeString(I18n.locale) +
-      I18n.t(". Автоматически каждые 10 секунд.")
-    : I18n.t("Проверить отметки хранения в Windows");
   $("mode").disabled = working;
-  $("start").textContent =
-    phase === "cleanup_required"
-      ? I18n.t("↺ Восстановить")
-      : I18n.t("▶ Включить прокси");
-  $("stop").disabled = !(active || phase === "starting");
   if (document.activeElement !== $("mode")) $("mode").value = s.mode;
   const clientScope = s.session.certificate_scope === "client";
   const missing =
@@ -187,7 +189,9 @@ function renderRows(data) {
     const extension = row.name.includes(".")
       ? row.name.split(".").pop().slice(0, 4).toUpperCase()
       : "FILE";
-    title.append(node("span", "file-icon", extension));
+    const icon = node("span", "file-icon", extension);
+    Thumbnails.decorate(icon, row);
+    title.append(icon);
     const text = node("div", "file-text");
     const button = node("button", "file-name", row.name);
     button.title = row.path;
@@ -288,6 +292,7 @@ function renderRows(data) {
     });
   }
   ListMotion.render(body, entries, JSON.stringify([filter, search, offset]));
+  Thumbnails.sync(body);
   $("empty").hidden = data.rows.length > 0;
   const recent = filter === "downloaded";
   $("pagination-label").textContent = total
@@ -305,8 +310,14 @@ function renderRows(data) {
   $("prev").disabled = offset === 0;
   $("next").disabled = offset + data.rows.length >= total;
   $("load-more").hidden = !recent || data.rows.length >= total;
-  $("load-more").disabled = !connected;
-  $("load-more").textContent = I18n.t("Показать ещё");
+  renderLoadMore();
+}
+function renderLoadMore() {
+  const button = $("load-more"),
+    label = I18n.t(loadingMore ? "Загрузка…" : "Показать ещё");
+  button.disabled = !connected || loadingMore;
+  button.ariaBusy = String(loadingMore);
+  if (button.textContent !== label) button.textContent = label;
 }
 function renderEvents(events) {
   const target = $("events");
@@ -396,13 +407,13 @@ async function refresh(topics = null) {
   ];
   const criteria = JSON.stringify(requested);
   const filesRequested = !Array.isArray(topics) || topics.includes("files");
-  if (filesRequested) $("load-more").disabled = true;
   try {
     const response = await fetch("/api/state", {
       signal: AbortSignal.timeout(10000),
     });
     if (!response.ok) throw new Error(I18n.t("Панель недоступна"));
     snapshot = await response.json();
+    Thumbnails.configure(snapshot);
     Toasts.problem(
       "statistics",
       snapshot.statistics_error
@@ -416,7 +427,7 @@ async function refresh(topics = null) {
       snapshot.root || I18n.t("Папка синхронизации ещё не выбрана");
     renderEvents(snapshot.events);
     if (!filesRequested) {
-      $("load-more").disabled = false;
+      renderLoadMore();
       Toasts.problem("connection", "");
       return;
     }
@@ -454,6 +465,7 @@ async function refresh(topics = null) {
           return;
         }
       }
+      loadingMore = false;
       renderRows(data);
     } else refreshQueued = true;
   } catch (e) {
@@ -464,17 +476,13 @@ async function refresh(topics = null) {
       I18n.t("Не удалось обновить список файлов. ") + e.message,
     );
     $("session-title").textContent = I18n.t("Нет связи с панелью");
-    $("session-led").className = "session-led offline";
-    for (const id of [
-      "start",
-      "stop",
-      "settings",
-      "mode",
-      "rescan",
-      "load-more",
-    ])
+    $("proxy-toggle").className = "proxy-toggle offline";
+    $("proxy-toggle").ariaBusy = "false";
+    $("proxy-toggle").title = I18n.t("Нет связи с панелью");
+    for (const id of ["proxy-toggle", "mode", "load-more"])
       $(id).disabled = true;
-    $("load-more").textContent = I18n.t("Показать ещё");
+    loadingMore = false;
+    renderLoadMore();
   } finally {
     busy = false;
     if (refreshQueued) {
@@ -509,6 +517,7 @@ function setFilter(value) {
   offset = 0;
   visibleDownloads = 60;
   downloadedTotal = null;
+  loadingMore = false;
   $("page-controls").hidden = value === "downloaded";
   $("load-more").hidden = true;
   $("downloaded-heading").textContent =
@@ -533,6 +542,7 @@ $("search").addEventListener("input", (e) => {
     offset = 0;
     visibleDownloads = 60;
     downloadedTotal = null;
+    loadingMore = false;
     refresh();
   }, 180);
 });
@@ -545,9 +555,10 @@ $("next").addEventListener("click", () => {
   refresh();
 });
 $("load-more").addEventListener("click", () => {
-  if (filter !== "downloaded" || !connected || busy) return;
+  if (filter !== "downloaded" || !connected || loadingMore) return;
+  loadingMore = true;
   visibleDownloads += 60;
-  $("load-more").textContent = I18n.t("Загрузка…");
+  renderLoadMore();
   refresh();
 });
 $("mode").addEventListener("change", (e) =>
@@ -558,16 +569,6 @@ $("mode").addEventListener("change", (e) =>
     })
     .catch((e) => toast(e.message)),
 );
-$("rescan").addEventListener("click", async () => {
-  $("rescan").disabled = true;
-  try {
-    await action("/api/rescan");
-    toast(I18n.t("Обновление списка запрошено"), "success");
-    await refresh();
-  } catch (e) {
-    toast(e.message);
-  }
-});
 function openSetup() {
   $("setup-error").hidden = true;
   $("setup-root").value = snapshot.root;
@@ -623,7 +624,6 @@ for (const [id, path] of [
     }
   });
 }
-$("settings").addEventListener("click", openSetup);
 $("setup-cancel").addEventListener("click", () => $("setup-dialog").close());
 $("setup-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -639,18 +639,13 @@ $("setup-form").addEventListener("submit", async (event) => {
     toast(error.message);
   }
 });
-$("start").addEventListener("click", async () => {
-  if (snapshot.session.phase === "cleanup_required") {
-    try {
-      await action("/api/recover");
-      await refresh();
-    } catch (error) {
-      toast(error.message);
-    }
-    return;
-  }
+async function requestStart() {
   if (!snapshot.configured) {
     openSetup();
+    return;
+  }
+  if (snapshot.certificate_approved) {
+    await changeSession("start");
     return;
   }
   $("consent-error").hidden = true;
@@ -660,6 +655,38 @@ $("start").addEventListener("click", async () => {
   $("consent-checkbox").checked = false;
   $("consent-start").disabled = true;
   $("consent-dialog").showModal();
+}
+async function changeSession(command, data = {}) {
+  if (!connected || sessionPending) return;
+  sessionPending = command;
+  sessionView(snapshot);
+  try {
+    await action("/api/" + command, data);
+    if (command === "start") $("consent-dialog").close();
+    toast(
+      I18n.t(
+        command === "start"
+          ? "Запуск прокси."
+          : "Остановка и восстановление запущены.",
+      ),
+      "info",
+    );
+    await refresh();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    sessionPending = null;
+    if (connected) sessionView(snapshot);
+  }
+}
+$("proxy-toggle").addEventListener("click", async () => {
+  if (!connected || sessionPending || snapshot.session.phase === "stopping")
+    return;
+  const phase = snapshot.session.phase;
+  if (phase === "cleanup_required") await changeSession("recover");
+  else if (phase === "active" || phase === "starting")
+    await changeSession("stop");
+  else await requestStart();
 });
 $("consent-checkbox").addEventListener("change", () => {
   $("consent-start").disabled = !$("consent-checkbox").checked;
@@ -668,34 +695,24 @@ $("consent-cancel").addEventListener("click", () =>
   $("consent-dialog").close(),
 );
 $("consent-start").addEventListener("click", async () => {
+  if (!$("consent-checkbox").checked || sessionPending) return;
   try {
     $("consent-start").disabled = true;
-    await action("/api/start", {
+    await changeSession("start", {
       accepted_thumbprint: snapshot.certificate_thumbprint,
     });
-    $("consent-dialog").close();
-    toast(I18n.t("Запуск прокси."), "info");
-    await refresh();
-  } catch (error) {
-    toast(error.message);
-    $("consent-start").disabled = false;
-  }
-});
-$("stop").addEventListener("click", async () => {
-  try {
-    $("stop").disabled = true;
-    await action("/api/stop");
-    toast(I18n.t("Остановка и восстановление запущены."), "info");
-    await refresh();
-  } catch (e) {
-    toast(e.message);
+  } finally {
+    $("consent-start").disabled = !$("consent-checkbox").checked;
   }
 });
 I18n.onChange(() => {
   renderListHeader();
   if (snapshot) {
     if (connected) sessionView(snapshot);
-    else $("session-title").textContent = I18n.t("Нет связи с панелью");
+    else {
+      $("session-title").textContent = I18n.t("Нет связи с панелью");
+      $("proxy-toggle").title = I18n.t("Нет связи с панелью");
+    }
     renderMetrics(snapshot, false);
     renderEvents(snapshot.events);
     if (lastRows) renderRows(lastRows);

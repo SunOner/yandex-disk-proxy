@@ -316,6 +316,32 @@ async function main() {
   render(bulk);
   assert.equal(calls.length, 0);
   assert.equal(mutations, 0);
+  const photoRow = new Node("TR"),
+    frame = new Node("SPAN"),
+    photo = new Node("IMG");
+  frame.setAttribute("data-thumbnail", "photo:1");
+  photo.setAttribute("src", "blob:decoded-preview");
+  frame.append(photo);
+  photoRow.append(frame);
+  list.render(
+    container,
+    [{ key: "photo", version: 1, node: photoRow }],
+    "previews",
+  );
+  const updated = new Node("TR"),
+    incoming = new Node("SPAN");
+  incoming.setAttribute("data-thumbnail", "photo:1");
+  updated.append(incoming);
+  list.render(
+    container,
+    [{ key: "photo", version: 2, node: updated }],
+    "previews",
+  );
+  assert.equal(
+    container.children[0].children[0].children[0],
+    photo,
+    "Status updates preserve decoded thumbnails and object URLs",
+  );
   for (const page of ["index", "requests", "recovery"]) {
     const html = fs.readFileSync(
       path.join(__dirname, "../dist", page + ".html"),

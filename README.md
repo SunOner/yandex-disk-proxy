@@ -6,8 +6,8 @@
 
 1. Download **YandexDiskProxy.exe** from the [latest release](https://github.com/SunOner/yandex-disk-proxy/releases/latest).
 2. Run it. Python and dependency installation are not required.
-3. In **http://127.0.0.1:18765**, use **Browse…** to select the sync folder and `YandexDisk4.exe`.
-4. Click **Start proxy** and approve the certificate in the panel.
+3. In **http://127.0.0.1:18765**, turn on the switch beside the proxy status. If the paths were not detected, select the sync folder and `YandexDisk4.exe` using **Browse…**, then turn on the switch again.
+4. Approve the certificate on first use. The same approved certificate is reused on subsequent starts.
 
 Keep the console open. The proxy runs until stopped manually; closing the browser tab does not stop it. Windows 10/11 x64; unsigned EXE. Tested on Windows 11 with Yandex Disk 4.28.6.5804.
 
@@ -27,13 +27,19 @@ The browser also remembers file views and journal filters. Search text, request 
 
 Switching away from deferral returns deferred files to the queue. Only files marked **Keep on this computer** are selected. Partially downloaded and modified files are not deferred. The proxy cannot restore unavailable server data or turn a failed download into a successful one.
 
-The queue and remaining size are refreshed from Windows metadata every 10 seconds. **Refresh list** checks immediately. Newly selected folders, removed flags and deleted files are picked up without restarting. Files temporarily deferred by the proxy remain in the queue.
+The queue and remaining size are refreshed from Windows metadata every 10 seconds. Newly selected folders, removed flags and deleted files are picked up without restarting. Files temporarily deferred by the proxy remain in the queue.
 
 **New downloads** lists confirmed native downloads newest first, with the Windows confirmation time. **Show more** reveals another 60 entries and keeps already expanded rows. Direct downloads are counted separately. Network traffic includes retries.
 
 The panel follows server change notifications instead of redrawing every two seconds. Bursts are combined into bounded updates; unchanged rows stay attached. New entries and existing rows slide together. In a scrolled list, the reading position stays fixed. Hidden tabs suspend updates and resynchronize when reopened. If the event stream is unavailable, polling resumes about every five seconds. Journal pause and reduced-motion settings are respected.
 
 Counter digits roll when their values change. The **⛶** button opens a fullscreen dashboard; **Esc** or **Back to files** returns to the list. If browser fullscreen is unavailable, the dashboard fills the window. Last values and their timestamp remain visible when disconnected. Reduced-motion settings are respected.
+
+## Previews
+
+File lists show small previews for supported images, videos and PDFs when Yandex returns one. Only visible rows request a 96×96 preview, using the captured client session after its account is verified. No additional login is needed. Missing previews keep the extension icon; original files and local placeholders are never read for thumbnails.
+
+Previews use at most two concurrent requests, a five-minute RAM cache limited to 128 entries / 8 MiB, and a 256 KiB limit per image. Image bytes, signed preview links and credentials are not saved to disk. The browser receives only image bytes through the local backend. Preview requests are labelled separately in diagnostics and do not count as completed downloads.
 
 ## Monitoring and saved statistics
 
@@ -54,7 +60,7 @@ Lifetime totals remain. Checkpoints run every five seconds and before exit; a cr
 
 ## Stop and recover
 
-Click **Stop and restore** or close the console. The proxy restores keep-on-PC flags and restarts Disk directly. After a power failure, run the EXE again or use:
+Turn off the proxy switch or close the console. The proxy restores keep-on-PC flags and restarts Disk directly. If recovery fails, use the same switch to retry restoration. After a power failure, run the EXE again or use:
 
 ```powershell
 .\YandexDiskProxy.exe --recover
@@ -108,6 +114,6 @@ Get-ChildItem tests/test_*.cjs | ForEach-Object { node $_.FullName; if ($LASTEXI
 .venv\Scripts\python.exe build_windows.py
 ```
 
-Output: `release\YandexDiskProxy.exe` and `SHA256SUMS.txt`. Source runs store data in `.local`. The EXE includes Python, mitmproxy and dependency licences.
+Output always uses `release\YandexDiskProxy.exe` and `release\SHA256SUMS.txt`, without version subfolders. Keep the same installation path when replacing the EXE so VPN split-tunneling rules continue to match. Add this EXE to your VPN application's bypass list; the proxy's child processes use the same executable. Close the running proxy before replacing it. Source runs store data in `.local`. The EXE includes Python, mitmproxy and dependency licences.
 
 Independent project, not a Yandex product. [MIT licence](LICENSE).

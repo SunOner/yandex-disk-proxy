@@ -35,7 +35,8 @@ function get(id) {
 }
 const context = vm.createContext({
   I18n: require("./i18n_stub.cjs")(),
-  LivePanel:{subscribe(){}},
+  LivePanel: { subscribe() {} },
+  Thumbnails: { decorate() {}, sync() {}, configure() {} },
   console,
   URLSearchParams,
   Intl,
@@ -101,7 +102,10 @@ async function responseList(total, count, newest = false) {
   return new URLSearchParams(request.url.split("?")[1]);
 }
 async function main() {
-  vm.runInContext(fs.readFileSync(path.join(root, 'dist/list-motion.js'), 'utf8'), context);
+  vm.runInContext(
+    fs.readFileSync(path.join(root, "dist/list-motion.js"), "utf8"),
+    context,
+  );
   vm.runInContext(code, context);
   await responseList(0, 0);
   vm.runInContext("setFilter('downloaded')", context);
@@ -114,11 +118,33 @@ async function main() {
   const time = get("files").children[0].children.at(-1).children[0];
   assert.equal(time.dateTime, "2026-10-21T10:03:00+00:00");
   assert.ok(!time.children[0].textContent.includes("Invalid"));
-  get("load-more").listeners.click();
+  const more = get("load-more");
+  assert.equal(more.disabled, false);
+  // Background refreshes must not dim the button while either request is pending.
+  vm.runInContext("refresh(['files'])", context);
+  assert.equal(more.disabled, false);
+  respond(requests.shift(), state);
+  await tick();
+  assert.equal(more.disabled, false);
+  respond(requests.shift(), { total: 181, offset: 0, rows: rows(60) });
+  await tick();
+  assert.equal(more.disabled, false);
+  assert.equal(more.textContent, "Показать ещё");
+  assert.equal(more.ariaBusy, "false");
+  // A click during an in-flight background refresh queues one expansion.
+  vm.runInContext("refresh(['files'])", context);
+  more.listeners.click();
   assert.equal(get("load-more").disabled, true);
+  assert.equal(more.textContent, "Загрузка…");
+  assert.equal(more.ariaBusy, "true");
+  more.listeners.click();
+  await responseList(181, 60);
   query = await responseList(181, 120);
   assert.equal(query.get("limit"), "120");
   assert.equal(get("files").children.length, 120);
+  assert.equal(more.disabled, false);
+  assert.equal(more.textContent, "Показать ещё");
+  assert.equal(more.ariaBusy, "false");
   // A new completion retains the entire previously expanded prefix.
   vm.runInContext("refresh()", context);
   await responseList(182, 120, true);
@@ -145,7 +171,7 @@ async function main() {
   assert.equal(get("page-controls").hidden, false);
   assert.equal(get("load-more").hidden, true);
   console.log(
-    "Recent downloads: newest first, completion time, expansion retained on insert, paging unchanged elsewhere.",
+    "Recent downloads: stable button during background updates, queued single expansion, newest first, completion time and paging passed.",
   );
 }
 main().catch((error) => {

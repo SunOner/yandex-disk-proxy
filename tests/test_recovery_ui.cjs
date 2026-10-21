@@ -40,6 +40,7 @@ const state = {
 const context = vm.createContext({
   I18n: require("./i18n_stub.cjs")(),
   LivePanel: { subscribe() {} },
+  Thumbnails: { decorate() {}, sync() {}, configure() {} },
   console,
   Intl,
   URLSearchParams,

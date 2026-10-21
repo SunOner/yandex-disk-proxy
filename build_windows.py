@@ -11,9 +11,10 @@ from runtime import VERSION
 
 def main():
     root = Path(__file__).resolve().parent
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--output", default=str(root / "release"))
-    output = Path(parser.parse_args().output).resolve()
+    parser = argparse.ArgumentParser(description="Build release/YandexDiskProxy.exe")
+    parser.parse_args()
+    output = root / "release"
+    staging = root / "build" / "package"
     subprocess.run(
         [
             sys.executable,
@@ -22,14 +23,21 @@ def main():
             str(root / "windows.spec"),
             "--noconfirm",
             "--distpath",
-            str(output),
+            str(staging),
             "--workpath",
             str(root / "build"),
         ],
         cwd=root,
         check=True,
     )
+    output.mkdir(parents=True, exist_ok=True)
     exe = output / "YandexDiskProxy.exe"
+    try:
+        (staging / exe.name).replace(exe)
+    except PermissionError:
+        raise SystemExit(
+            f"Close Yandex Disk Proxy and run the build again to replace {exe}."
+        ) from None
     with exe.open("rb") as stream:
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
     (exe.parent / "SHA256SUMS.txt").write_text(digest + "  " + exe.name + "\n", encoding="utf-8")

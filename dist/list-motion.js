@@ -26,6 +26,13 @@ const ListMotion = (() => {
       return current;
     }
     if (current.nodeType !== 1) return current;
+    // Thumbnail decoding and object URLs belong to the preview controller.
+    if (
+      current.hasAttribute("data-thumbnail") &&
+      current.getAttribute("data-thumbnail") ===
+        incoming.getAttribute("data-thumbnail")
+    )
+      return current;
     current.onclick = incoming.onclick;
     for (const attribute of Array.from(current.attributes))
       if (!incoming.hasAttribute(attribute.name))

@@ -31,6 +31,7 @@ from inventory import scan
 from metrics import INTERVAL as STATS_INTERVAL
 from metrics import Metrics
 from operations import ANOMALIES, LABELS
+from thumbnails import Thumbnails, Unavailable
 from updates import TOPICS, Updates
 from winops import (
     APP,
@@ -180,6 +181,8 @@ class Model:
             return row.copy() if row else None
 
     def init_recovery(self):
+        if hasattr(self, "thumbnails"):
+            self.thumbnails.close()
         self.recovery = Recovery(
             ROOT,
             RUNTIME / "recovery" / file_id(str(ROOT)),
@@ -188,6 +191,12 @@ class Model:
             lambda kind, **values: self.event({"event": kind, **values}),
             changed=lambda: self.updates.changed("state", "recovery"),
         )
+        self.thumbnails = Thumbnails(
+            self.recovery,
+            self.recovery_rows,
+            lambda kind, **values: self.event({"event": kind, **values}),
+        )
+        self.preview_context = secrets.token_urlsafe(12)
 
     def refresh_inventory(self):
         if ROOT is None or not self.inventory_lock.acquire(blocking=False):
@@ -889,6 +898,8 @@ class Model:
                 "events": list(self.events)[:30],
                 "cleanup": self.latest_cleanup,
                 "certificate_thumbprint": THUMB,
+                "certificate_approved": settings.read().get("consented_thumbprint") == THUMB,
+                "preview_context": self.preview_context,
                 "tls": self.tls,
                 "log_error": self.log_error,
                 "statistics_error": self.metrics_error,
@@ -996,7 +1007,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header(key, value)
         self.send_header(
             "Content-Security-Policy",
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'",
+            "default-src 'self'; img-src 'self' blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'",
         )
         self.end_headers()
         try:
@@ -1148,6 +1159,7 @@ class Handler(BaseHTTPRequestHandler):
             "/": ("index.html", "text/html; charset=utf-8"),
             "/app.js": ("app.js", "text/javascript; charset=utf-8"),
             "/list-motion.js": ("list-motion.js", "text/javascript; charset=utf-8"),
+            "/thumbnails.js": ("thumbnails.js", "text/javascript; charset=utf-8"),
             "/live.js": ("live.js", "text/javascript; charset=utf-8"),
             "/toasts.js": ("toasts.js", "text/javascript; charset=utf-8"),
             "/meters.js": ("meters.js", "text/javascript; charset=utf-8"),
@@ -1198,6 +1210,30 @@ class Handler(BaseHTTPRequestHandler):
                 for event in values:
                     if isinstance(event, dict):
                         ACTIVE.event(event)
+            elif self.path == "/api/thumbnail":
+                with ACTIVE.lock:
+                    context = data.get("context")
+                    if not isinstance(context, str) or not hmac.compare_digest(
+                        context, ACTIVE.preview_context
+                    ):
+                        self.reply(409, {"error": "Preview context changed"})
+                        return
+                    manager = ACTIVE.thumbnails
+                try:
+                    image, mime = manager.get(data.get("file", ""))
+                except Unavailable as exc:
+                    self.reply(
+                        exc.code,
+                        {"error": "Thumbnail unavailable"},
+                        headers={"Retry-After": str(exc.retry)},
+                    )
+                    return
+                with ACTIVE.lock:
+                    if manager is not ACTIVE.thumbnails:
+                        self.reply(409, {"error": "Preview context changed"})
+                        return
+                self.reply(200, image, mime, {"Cross-Origin-Resource-Policy": "same-origin"})
+                return
             elif self.path == "/api/start":
                 if data.get("accepted_thumbprint") == THUMB:
                     settings.preference(consented_thumbprint=THUMB)
@@ -1361,6 +1397,7 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        ACTIVE.thumbnails.close()
         ACTIVE.recovery.close()
         try:
             ACTIVE.capture_statistics()

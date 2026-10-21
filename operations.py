@@ -8,6 +8,7 @@ import urllib.parse
 LABELS = {
     "download_link": "Ссылка загрузки",
     "download": "Скачивание",
+    "preview": "Миниатюра",
     "upload": "Отправка файла",
     "upload_link": "Ссылка отправки",
     "metadata": "Метаданные",
@@ -61,6 +62,8 @@ def classify(row):
         return row.get("operation", "other")
     if kind in ("tls", "connection", "websocket"):
         return kind
+    if row.get("client") == "preview":
+        return "preview"
     method = row.get("method", "GET").upper()
     u = urllib.parse.urlsplit(row.get("url", ""))
     path, host = u.path.lower(), (u.hostname or "").lower()
@@ -79,6 +82,8 @@ def classify(row):
     if any(p in host for p in ("metrika.", "appmetrica.", "telemetry.")):
         return "telemetry"
     if host == "downloader.disk.yandex.ru" or host.endswith(".storage.yandex.net"):
+        if host == "downloader.disk.yandex.ru" and path.startswith("/preview/"):
+            return "preview"
         return (
             "upload"
             if method in ("PUT", "POST", "PATCH")
