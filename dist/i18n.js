@@ -104,6 +104,14 @@ const I18n = (() => {
     "Команда отправлена. Результат появится в журнале.":
       "Command sent. The result will appear in the logs.",
     "Настройки сохранены.": "Settings saved.",
+    "Настройки сохранены. Читаем список файлов…":
+      "Settings saved. Reading file list…",
+    "Читаем список файлов…": "Reading file list…",
+    "Не удалось прочитать список файлов. См. журнал.":
+      "Could not read the file list. See the logs.",
+    "Сохранение…": "Saving…",
+    "Проверяем папку и приложение…": "Checking the folder and application…",
+    "Выберите путь в окне Windows.": "Select a path in the Windows dialog.",
     "Запуск прокси.": "Starting proxy.",
     "Остановка и восстановление запущены.":
       "Stopping proxy and restoring the client.",

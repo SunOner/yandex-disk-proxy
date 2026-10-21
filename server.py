@@ -206,6 +206,7 @@ class Model:
         try:
             with self.lock:
                 self.inventory["scanning"] = True
+                self.inventory.pop("error", None)
                 previous = {p: (r["size"], r["status"]) for p, r in self.files.items()}
                 initialized = bool(self.inventory.get("first"))
                 pending = dict(self.downloads.pending)
@@ -323,6 +324,10 @@ class Model:
                 self.recovery.cancel_paths(removed)
             for operation, rel, details in activities:
                 self.file_activity(operation, rel, **details)
+        except (OSError, ValueError) as exc:
+            with self.lock:
+                self.inventory["error"] = str(exc)
+            raise
         finally:
             with self.lock:
                 self.inventory["scanning"] = False
@@ -1266,10 +1271,16 @@ class Handler(BaseHTTPRequestHandler):
                     winops.ROOT, winops.CLIENT = ROOT, CLIENT
                     ACTIVE.files = {}
                     ACTIVE.downloads = History(history_path())
-                    ACTIVE.refresh_inventory()
+                    ACTIVE.inventory = {
+                        "scanning": True,
+                        "updated_at": None,
+                        "interval_seconds": 10,
+                    }
                     ACTIVE.recovery.close()
                     ACTIVE.init_recovery()
                     ACTIVE.init_statistics()
+                    # Saving paths must not wait for the first full directory scan.
+                    ACTIVE.inventory_wake.set()
             elif self.path == "/api/browse":
                 if ACTIVE.session().get("phase") not in ("idle", "stopped"):
                     raise ValueError("Сначала остановите прокси")

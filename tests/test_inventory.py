@@ -131,6 +131,17 @@ class LiveInventory(unittest.TestCase):
         self.assertFalse(thread.is_alive())
         self.model.refresh_inventory.assert_called_once()
 
+    def test_failed_initial_scan_clears_busy_state_and_can_be_retried(self):
+        self.model.inventory = {"scanning": True, "updated_at": None}
+        with patch.object(server, "scan", side_effect=OSError("Folder unavailable")):
+            with self.assertRaises(OSError):
+                self.model.refresh_inventory()
+        self.assertFalse(self.model.inventory["scanning"])
+        self.assertEqual(self.model.inventory["error"], "Folder unavailable")
+        self.refresh({"file": item("file")})
+        self.assertNotIn("error", self.model.inventory)
+        self.assertIsNotNone(self.model.inventory["updated_at"])
+
     def test_completion_found_by_scan_is_counted_once_with_connection_type(self):
         self.refresh({"file": item("file")})
         snapshot = Scan({"file": item("file", pending=False)}, {"file"})

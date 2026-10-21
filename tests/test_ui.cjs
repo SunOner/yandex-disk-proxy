@@ -274,8 +274,101 @@ async function main() {
   await consent;
   assert.equal(element("consent-dialog").open, false);
   assert.equal(toggle.ariaChecked, "true");
+  show({ ...state("idle"), configured: false });
+  await toggle.listeners.click();
+  element("setup-root").value = "selected-disk";
+  element("setup-client").value = "YandexDisk4.exe";
+  const submit = () =>
+    element("setup-form").listeners.submit({ preventDefault() {} });
+  const browsing = element("browse-root").listeners.click();
+  assert.equal(
+    element("setup-save").disabled,
+    true,
+    "Cannot save while the picker is open",
+  );
+  await submit();
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, "/api/browse");
+  respond(requests.shift(), { path: "picked-disk" });
+  await browsing;
+  assert.equal(element("setup-root").value, "picked-disk");
+  assert.equal(element("setup-save").disabled, false);
+  const saving = submit();
+  assert.equal(requests[0].url, "/api/setup");
+  assert.equal(element("setup-save").textContent, "Сохранение…");
+  assert.equal(element("setup-save").ariaBusy, "true");
+  assert.equal(element("setup-progress").hidden, false);
+  for (const id of [
+    "setup-root",
+    "setup-client",
+    "browse-root",
+    "browse-client",
+    "setup-save",
+    "setup-cancel",
+  ])
+    assert.equal(element(id).disabled, true, id);
+  await submit();
+  await element("browse-client").listeners.click();
+  assert.equal(
+    requests.length,
+    1,
+    "Pending save cannot submit twice or open a picker",
+  );
+  element("setup-cancel").listeners.click();
+  assert.equal(element("setup-dialog").open, true);
+  let escapePrevented = false;
+  element("setup-dialog").listeners.cancel({
+    preventDefault() {
+      escapePrevented = true;
+    },
+  });
+  assert.equal(escapePrevented, true, "Escape cannot hide an unfinished save");
+  respond(requests.shift(), { ok: true });
+  await tick();
+  assert.equal(
+    element("setup-dialog").open,
+    false,
+    "Close on acknowledgement, before the scan finishes",
+  );
+  respond(requests.shift(), {
+    ...state("idle"),
+    inventory: { scanning: true, updated_at: null },
+  });
+  await tick();
+  respond(requests.shift(), { offset: 0, total: 0, rows: [] });
+  await saving;
+  assert.equal(element("inventory-status").hidden, false);
+  assert.equal(element("setup-save").textContent, "Сохранить");
+  assert.equal(element("setup-save").disabled, false);
+  assert.equal(element("setup-progress").hidden, true);
+  show({ ...state("idle"), inventory: { scanning: false, updated_at: 123 } });
+  assert.equal(element("inventory-status").hidden, true);
+  show({ ...state("idle"), inventory: { scanning: true, updated_at: 123 } });
+  assert.equal(
+    element("inventory-status").hidden,
+    true,
+    "Routine scans do not flash the initial scan indicator",
+  );
+  vm.runInContext("openSetup()", context);
+  const failedSave = submit();
+  requests.shift().resolve({
+    ok: false,
+    json: async () => ({ error: "Папка синхронизации не найдена" }),
+  });
+  await failedSave;
+  assert.equal(
+    element("setup-dialog").open,
+    true,
+    "Validation errors keep the form open",
+  );
+  assert.equal(
+    element("setup-save").disabled,
+    false,
+    "A failed save can be corrected and retried",
+  );
+  assert.equal(element("setup-form").ariaBusy, "false");
   console.log(
-    "UI: switch start/stop/recovery, pending and offline states, duplicate guards, first setup, certificate consent and stale results passed.",
+    "UI: switch, consent, stale results, setup busy feedback, picker/save guards, async scan status and validation retry passed.",
   );
 }
 main().catch((error) => {

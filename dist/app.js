@@ -9,6 +9,7 @@ let snapshot = null,
   connected = false,
   loadingMore = false,
   sessionPending = null,
+  setupPending = null,
   visibleDownloads = 60,
   downloadedTotal = null;
 let lastRows = null,
@@ -135,6 +136,14 @@ function sessionView(s) {
         : I18n.t(s.log_error || s.session.error_detail) || "";
   $("repair-ca").hidden = !missing || clientScope;
   $("restart-client").hidden = !clientError || missing;
+  $("inventory-status").hidden =
+    !s.inventory?.scanning || s.inventory.updated_at !== null;
+  Toasts.problem(
+    "inventory",
+    s.inventory?.error
+      ? I18n.t("Не удалось прочитать список файлов. См. журнал.")
+      : "",
+  );
 }
 function showDetails(row, open = true) {
   detailRow = row;
@@ -553,6 +562,7 @@ $("mode").addEventListener("change", (e) =>
     .catch((e) => toast(e.message)),
 );
 function openSetup() {
+  if (setupPending) return;
   $("setup-error").hidden = true;
   $("setup-root").value = snapshot.root;
   $("setup-client").value = snapshot.client;
@@ -565,14 +575,46 @@ function openSetup() {
   }
   $("setup-dialog").showModal();
 }
+function setupView(pending) {
+  setupPending = pending;
+  $("setup-form").ariaBusy = String(!!pending);
+  for (const id of [
+    "setup-root",
+    "setup-client",
+    "browse-root",
+    "browse-client",
+    "setup-save",
+    "setup-cancel",
+  ])
+    $(id).disabled = !!pending;
+  $("setup-save").ariaBusy = String(pending === "saving");
+  $("setup-save").textContent = I18n.t(
+    pending === "saving" ? "Сохранение…" : "Сохранить",
+  );
+  $("setup-progress").hidden = !pending;
+  $("setup-progress").textContent = I18n.t(
+    pending === "saving"
+      ? "Проверяем папку и приложение…"
+      : "Выберите путь в окне Windows.",
+  );
+  for (const [id, kind] of [
+    ["browse-root", "folder"],
+    ["browse-client", "client"],
+  ]) {
+    $(id).ariaBusy = String(pending === kind);
+    $(id).textContent = I18n.t(
+      pending === kind ? "Выберите в Windows…" : "Обзор…",
+    );
+  }
+}
 for (const [button, input, kind] of [
   ["browse-root", "setup-root", "folder"],
   ["browse-client", "setup-client", "client"],
 ]) {
   $(button).addEventListener("click", async () => {
-    const controls = ["browse-root", "browse-client", "setup-cancel"];
-    controls.forEach((id) => ($(id).disabled = true));
-    $(button).textContent = I18n.t("Выберите в Windows…");
+    if (setupPending) return;
+    $("setup-error").hidden = true;
+    setupView(kind);
     try {
       const result = await action("/api/browse", {
         kind,
@@ -583,8 +625,7 @@ for (const [button, input, kind] of [
     } catch (error) {
       toast(error.message);
     } finally {
-      controls.forEach((id) => ($(id).disabled = false));
-      $(button).textContent = I18n.t("Обзор…");
+      setupView(null);
     }
   });
 }
@@ -607,19 +648,29 @@ for (const [id, path] of [
     }
   });
 }
-$("setup-cancel").addEventListener("click", () => $("setup-dialog").close());
+$("setup-cancel").addEventListener("click", () => {
+  if (!setupPending) $("setup-dialog").close();
+});
+$("setup-dialog").addEventListener("cancel", (event) => {
+  if (setupPending) event.preventDefault();
+});
 $("setup-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (setupPending) return;
+  $("setup-error").hidden = true;
+  setupView("saving");
   try {
     await action("/api/setup", {
       root: $("setup-root").value,
       client: $("setup-client").value,
     });
     $("setup-dialog").close();
-    toast(I18n.t("Настройки сохранены."), "success");
+    toast(I18n.t("Настройки сохранены. Читаем список файлов…"), "success");
     await refresh();
   } catch (error) {
     toast(error.message);
+  } finally {
+    setupView(null);
   }
 });
 async function requestStart() {
@@ -689,6 +740,7 @@ $("consent-start").addEventListener("click", async () => {
   }
 });
 I18n.onChange(() => {
+  setupView(setupPending);
   renderListHeader();
   if (snapshot) {
     if (connected) sessionView(snapshot);

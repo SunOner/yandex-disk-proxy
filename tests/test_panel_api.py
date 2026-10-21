@@ -14,6 +14,94 @@ import server
 
 
 class PanelAccess(unittest.TestCase):
+    def test_setup_acknowledges_paths_while_initial_scan_runs_in_background(self):
+        from inventory import Scan
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(server, "ROOT", None),
+            patch.object(server, "CLIENT", None),
+            patch.object(server.winops, "ROOT", None),
+            patch.object(server.winops, "CLIENT", None),
+            patch.object(server, "RUNTIME", Path(directory)),
+            patch.object(server.settings, "CONFIG", Path(directory) / "config.json"),
+        ):
+            root = Path(directory) / "disk"
+            root.mkdir()
+            client = Path(directory) / "YandexDisk4.exe"
+            client.touch()
+            model = server.Model()
+            entered, release = threading.Event(), threading.Event()
+
+            def slow_scan(path):
+                self.assertEqual(path, root)
+                entered.set()
+                if not release.wait(5):
+                    raise TimeoutError("Test did not release the scan")
+                return Scan(
+                    {
+                        "local.txt": {
+                            "path": "local.txt",
+                            "name": "local.txt",
+                            "size": 42,
+                            "cloud_pending": False,
+                        }
+                    },
+                    {"local.txt"},
+                )
+
+            httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+            port = httpd.server_address[1]
+            url = f"http://127.0.0.1:{port}"
+            with (
+                patch.object(server, "ACTIVE", model),
+                patch.object(server, "PORT", port),
+                patch.object(server, "URL", url),
+                patch.object(server, "scan", side_effect=slow_scan),
+            ):
+                http_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+                inventory_thread = threading.Thread(target=model.inventory_loop, daemon=True)
+                http_thread.start()
+                inventory_thread.start()
+                try:
+                    request = urllib.request.Request(
+                        url + "/api/setup",
+                        data=json.dumps({"root": str(root), "client": str(client)}).encode(),
+                        headers={
+                            "Origin": url,
+                            "X-Panel-Nonce": server.NONCE,
+                            "Content-Type": "application/json",
+                        },
+                    )
+                    with urllib.request.urlopen(request, timeout=2) as response:
+                        self.assertTrue(json.load(response)["ok"])
+                    self.assertTrue(entered.wait(2))
+                    self.assertEqual(server.settings.read()["root"], str(root))
+                    with urllib.request.urlopen(url + "/api/state", timeout=2) as response:
+                        state = json.load(response)
+                    self.assertTrue(state["configured"])
+                    self.assertTrue(state["inventory"]["scanning"])
+                    self.assertIsNone(state["inventory"]["updated_at"])
+                    release.set()
+                    model.closed = True
+                    model.inventory_wake.set()
+                    inventory_thread.join(timeout=2)
+                    self.assertFalse(inventory_thread.is_alive())
+                    self.assertEqual(model.files["local.txt"]["validated"], 42)
+                    self.assertFalse(model.inventory["scanning"])
+                    self.assertIsNotNone(model.inventory["updated_at"])
+                finally:
+                    release.set()
+                    model.closed = True
+                    model.inventory_wake.set()
+                    inventory_thread.join(timeout=2)
+                    httpd.shutdown()
+                    http_thread.join()
+                    httpd.server_close()
+                    model.thumbnails.close()
+                    model.recovery.close()
+                    model.metrics.close()
+
     def test_original_headers_need_nonce_and_origin_and_are_not_exposed_by_get(self):
         with (
             tempfile.TemporaryDirectory() as directory,

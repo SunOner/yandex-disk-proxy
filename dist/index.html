@@ -92,6 +92,14 @@
             <strong id="session-title" data-i18n-once="Прокси выключен"
               >Proxy is off</strong
             >
+            <span
+              id="inventory-status"
+              class="inventory-status"
+              role="status"
+              hidden
+              data-i18n="Читаем список файлов…"
+              >Reading file list…</span
+            >
           </div>
         </div>
         <div class="session-controls">
@@ -378,6 +386,13 @@
           Only files selected to keep on this PC are downloaded.
         </p>
         <p id="setup-error" class="dialog-error" role="alert" hidden></p>
+        <p
+          id="setup-progress"
+          class="setup-progress"
+          role="status"
+          aria-live="polite"
+          hidden
+        ></p>
         <div class="dialog-actions">
           <button
             type="button"
@@ -386,7 +401,12 @@
             data-i18n="Отмена"
           >
             Cancel</button
-          ><button class="button primary" type="submit" data-i18n="Сохранить">
+          ><button
+            id="setup-save"
+            class="button primary"
+            type="submit"
+            data-i18n-once="Сохранить"
+          >
             Save
           </button>
         </div>
