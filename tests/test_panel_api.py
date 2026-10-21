@@ -67,6 +67,7 @@ class PanelAccess(unittest.TestCase):
                         "/requests",
                         "/requests.js",
                         "/list-motion.js",
+                        "/toasts.js",
                         "/requests.css",
                         "/recovery",
                         "/recovery.js",

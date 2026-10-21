@@ -85,10 +85,6 @@ function element(tag, cls, text) {
   if (text !== undefined) item.textContent = text;
   return item;
 }
-function error(message) {
-  $("log-error").textContent = message;
-  $("log-error").hidden = !message;
-}
 function clock(timestamp, fallback = "") {
   return timestamp
     ? new Date(timestamp * 1000).toLocaleString("ru-RU")
@@ -236,6 +232,7 @@ async function details() {
           });
     if (version !== detailVersion || identity !== selected) return;
     if (!row) throw new Error("Запись больше не доступна");
+    Toasts.problem("request-details", "");
     $("original").textContent = format(row);
     $("detail-title").textContent =
       view === "events"
@@ -244,7 +241,8 @@ async function details() {
           ? "Запрос · токены скрыты"
           : "Запрос · оригинал";
   } catch (exc) {
-    if (version === detailVersion) error(exc.message);
+    if (version === detailVersion)
+      Toasts.problem("request-details", exc.message);
   }
 }
 function render(rows, total, dropped = 0) {
@@ -297,6 +295,7 @@ function render(rows, total, dropped = 0) {
         ),
       );
     button.addEventListener("click", () => {
+      Toasts.problem("request-details", "");
       selected = row.id;
       details();
       container
@@ -374,7 +373,8 @@ async function refresh() {
       `${trust} · Диск → прокси: ${side("client")} · Прокси → Яндекс: ${side("upstream")}`;
     if (view === "summary") {
       renderSummary(metadata);
-      error(state.log_error || "");
+      Toasts.problem("journal", state.log_error);
+      Toasts.problem("connection", "");
       return;
     }
     const result =
@@ -422,12 +422,13 @@ async function refresh() {
       render(result.rows, result.total, result.dropped);
     }
     if (selected) details();
-    error(state.log_error || result.error || "");
+    Toasts.problem("journal", state.log_error || result.error);
+    Toasts.problem("connection", "");
   } catch (exc) {
     connected = false;
     $("export").disabled = true;
     $("connection").textContent = "Нет связи с панелью";
-    error(exc.message);
+    Toasts.problem("connection", "Не удалось обновить журнал. " + exc.message);
   } finally {
     busy = false;
     if (queued) {
@@ -440,6 +441,7 @@ function switchView(next) {
   view = next;
   offset = 0;
   selected = null;
+  Toasts.problem("request-details", "");
   ++detailVersion;
   $("original").textContent = "";
   $("detail-title").textContent = "Выберите запись";
@@ -483,10 +485,13 @@ $("export").addEventListener("click", async () => {
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 30000);
+    Toasts.show("Архив диагностики передан браузеру для сохранения.", {
+      type: "success",
+    });
   } catch (exc) {
-    error(exc.message);
+    Toasts.show(exc.message, { type: "error" });
   } finally {
-    $("export").disabled = false;
+    $("export").disabled = !connected;
   }
 });
 $("query").addEventListener("input", () => {

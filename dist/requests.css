@@ -207,11 +207,6 @@ a {
 .log-footer {
   margin-top: 15px;
 }
-#log-error {
-  color: #ffb0a6;
-  margin-bottom: 15px;
-  font-size: 13px;
-}
 .log-record .record-file {
   color: #8eabc8;
   font-size: 11px;

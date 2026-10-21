@@ -75,10 +75,6 @@
 #download-url {
   width: 100%;
 }
-#log-error {
-  padding: 12px 0;
-  color: #ffb0a6;
-}
 @media (max-width: 800px) {
   .diagnostics-page {
     padding: 20px 14px;

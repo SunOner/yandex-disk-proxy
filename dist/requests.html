@@ -58,7 +58,6 @@
       Методы, URL, заголовки, соединения и изменения отметок хранения. Тела
       запросов и файлов не записываются. Оригиналы заголовков — только в памяти.
     </p>
-    <div id="log-error" role="alert" hidden></div>
     <section id="summary" hidden>
       <div class="metrics diagnostic-metrics">
         <article>
@@ -142,6 +141,13 @@
       перезапуска.
     </footer>
     <script src="/list-motion.js"></script>
+    <div
+      id="toast-stack"
+      class="toast-stack"
+      role="region"
+      aria-label="Уведомления"
+    ></div>
+    <script src="/toasts.js"></script>
     <script src="/requests.js"></script>
   </body>
 </html>

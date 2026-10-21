@@ -8,7 +8,7 @@ const code=fs.readFileSync(path.join(root,'dist/requests.js'),'utf8');
 const elements=new Map(),requests=[],rendered=[];
 function element(){return {value:'',checked:false,disabled:false,hidden:false,textContent:'',children:[],classList:{toggle(){}},append(...items){this.children.push(...items);},replaceChildren(...items){this.children=items;},addEventListener(){},querySelectorAll(){return [];}};}
 function get(id){assert.ok(html.includes(`id="${id}"`),id);if(!elements.has(id))elements.set(id,element());return elements.get(id);}
-const context=vm.createContext({console,Intl,URLSearchParams,AbortSignal,queueMicrotask,location:{hash:''},setInterval(){},setTimeout(){},window:{addEventListener(){}},document:{getElementById:get,createElement:element},rendered,
+const context=vm.createContext({console,Intl,URLSearchParams,AbortSignal,queueMicrotask,Toasts:{show(){},problem(){}},location:{hash:''},setInterval(){},setTimeout(){},window:{addEventListener(){}},document:{getElementById:get,createElement:element},rendered,
 fetch(url){return new Promise((resolve,reject)=>requests.push({url,resolve,reject}));}});
 const state={nonce:'local-test',session:{phase:'active',ca_trusted:false},tls:{client:{ok:true},upstream:{ok:true}}};
 const metadata={labels:{other:'Другая операция',download:'Скачивание'},anomaly_labels:{unknown:'Неизвестная операция'},since:1,totals:{http:12},operations:[],endpoints:[],retained:2,evicted:0,active:0};

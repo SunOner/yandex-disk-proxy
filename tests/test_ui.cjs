@@ -13,7 +13,7 @@ function element(id) {
   if (!elements.has(id)) elements.set(id, {
     value:'', disabled:false, hidden:false, textContent:'', className:'',
     classList:{toggle(){}},
-    addEventListener(){}, replaceChildren(){},
+    listeners:{}, addEventListener(name,fn){this.listeners[name]=fn;}, replaceChildren(){},
   });
   return elements.get(id);
 }
@@ -23,6 +23,7 @@ const context = vm.createContext({
   document:{getElementById:element, querySelector(){return null;}, querySelectorAll(){return [];}, activeElement:null},
   fetch(url){return new Promise((resolve,reject)=>requests.push({url,resolve,reject}));},
   rendered,
+  Toasts:{show(){},problem(){}},
 });
 const state = phase => ({session:{phase},mode:'defer',pending:1,pending_bytes:100,counts:{local:2},downloads:{count:1,bytes:10,since:'2026-01-01T00:00:00Z'},counters:{},root:'disk',events:[],nonce:'local-test'});
 const tick = () => new Promise(resolve=>setImmediate(resolve));

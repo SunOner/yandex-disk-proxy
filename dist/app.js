@@ -8,8 +8,7 @@ let snapshot = null,
   refreshQueued = false,
   connected = false,
   visibleDownloads = 60,
-  downloadedTotal = null,
-  timer = null;
+  downloadedTotal = null;
 const $ = (id) => document.getElementById(id);
 const labels = {
   waiting: "Ожидает",
@@ -49,18 +48,15 @@ function node(tag, cls, text) {
   if (text !== undefined) e.textContent = text;
   return e;
 }
-function toast(text) {
+function toast(text, type = "error") {
   const dialog = document.querySelector("dialog[open]");
-  const error = dialog?.querySelector(".dialog-error");
+  const error = type === "error" && dialog?.querySelector(".dialog-error");
   if (error) {
     error.textContent = text;
     error.hidden = false;
     return;
   }
-  $("toast").textContent = text;
-  $("toast").hidden = false;
-  clearTimeout(timer);
-  timer = setTimeout(() => ($("toast").hidden = true), 6000);
+  Toasts.show(text, { type });
 }
 async function action(path, data = {}) {
   if (!snapshot || !connected) throw new Error("Нет связи с панелью");
@@ -257,7 +253,7 @@ function renderRows(data) {
         const retry = node("button", "row-action", "Повторить");
         retry.addEventListener("click", () =>
           action("/api/retry", { file: row.path })
-            .then(() => toast("Файл возвращается в очередь"))
+            .then(() => toast("Файл возвращается в очередь", "success"))
             .catch((e) => toast(e.message)),
         );
         actions.append(retry);
@@ -268,7 +264,7 @@ function renderRows(data) {
         const defer = node("button", "row-action", "Отложить");
         defer.addEventListener("click", () =>
           action("/api/defer", { file: row.path })
-            .then(() => toast("Отправлен запрос Windows"))
+            .then(() => toast("Отправлен запрос Windows", "info"))
             .catch((e) => toast(e.message)),
         );
         actions.append(defer);
@@ -329,7 +325,7 @@ async function refresh() {
     const response = await fetch("/api/state", {
       signal: AbortSignal.timeout(10000),
     });
-    if (!response.ok) throw new Error("Backend unavailable");
+    if (!response.ok) throw new Error("Панель недоступна");
     snapshot = await response.json();
     connected = true;
     sessionView(snapshot);
@@ -368,6 +364,7 @@ async function refresh() {
     });
     if (!responseFiles.ok) throw new Error("Не удалось получить список файлов");
     const data = await responseFiles.json();
+    Toasts.problem("connection", "");
     if (
       criteria ===
       JSON.stringify([
@@ -393,6 +390,10 @@ async function refresh() {
     } else refreshQueued = true;
   } catch (e) {
     connected = false;
+    Toasts.problem(
+      "connection",
+      "Не удалось обновить список файлов. " + e.message,
+    );
     $("session-title").textContent = "Нет связи с панелью";
     $("session-led").className = "session-led offline";
     for (const id of [
@@ -475,14 +476,17 @@ $("load-more").addEventListener("click", () => {
 });
 $("mode").addEventListener("change", (e) =>
   action("/api/config", { mode: e.target.value })
-    .then(() => refresh())
+    .then(() => {
+      toast("Режим изменён.", "success");
+      return refresh();
+    })
     .catch((e) => toast(e.message)),
 );
 $("rescan").addEventListener("click", async () => {
   $("rescan").disabled = true;
   try {
     await action("/api/rescan");
-    toast("Обновление списка запрошено");
+    toast("Обновление списка запрошено", "success");
     await refresh();
   } catch (e) {
     toast(e.message);
@@ -531,7 +535,7 @@ for (const [id, path] of [
     $(id).disabled = true;
     try {
       await action(path);
-      toast("Команда отправлена. Результат появится в журнале.");
+      toast("Команда отправлена. Результат появится в журнале.", "info");
     } catch (error) {
       toast(error.message);
     } finally {
@@ -549,7 +553,7 @@ $("setup-form").addEventListener("submit", async (event) => {
       client: $("setup-client").value,
     });
     $("setup-dialog").close();
-    toast("Настройки сохранены.");
+    toast("Настройки сохранены.", "success");
     await refresh();
   } catch (error) {
     toast(error.message);
@@ -590,7 +594,7 @@ $("consent-start").addEventListener("click", async () => {
       accepted_thumbprint: snapshot.certificate_thumbprint,
     });
     $("consent-dialog").close();
-    toast("Запуск прокси.");
+    toast("Запуск прокси.", "info");
     await refresh();
   } catch (error) {
     toast(error.message);
@@ -601,6 +605,7 @@ $("stop").addEventListener("click", async () => {
   try {
     $("stop").disabled = true;
     await action("/api/stop");
+    toast("Остановка и восстановление запущены.", "info");
     await refresh();
   } catch (e) {
     toast(e.message);

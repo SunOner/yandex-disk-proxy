@@ -50,10 +50,6 @@ function el(tag, cls, text) {
   if (text !== undefined) e.textContent = text;
   return e;
 }
-function error(message) {
-  $("log-error").textContent = message;
-  $("log-error").hidden = !message;
-}
 async function json(path, options = {}) {
   const r = await fetch(path, {
     ...options,
@@ -73,11 +69,27 @@ async function action(name, data = {}) {
 }
 async function run(name, data = {}) {
   try {
-    await action(name, data);
-    error("");
+    const result = await action(name, data);
+    const message =
+      name === "enqueue"
+        ? "Файл добавлен в очередь."
+        : name === "batch"
+          ? result.queued
+            ? `Добавлено в очередь: ${result.queued}.`
+            : "Нет новых файлов для добавления."
+          : name === "folder"
+            ? "Папка загрузок открыта."
+            : data.action === "pause"
+              ? "Прямые загрузки приостановлены."
+              : data.action === "resume"
+                ? "Прямые загрузки продолжены."
+                : data.file
+                  ? "Загрузка файла остановлена."
+                  : "Прямые загрузки остановлены.";
+    Toasts.show(message, { type: "success" });
     await refresh();
   } catch (e) {
-    error(e.message);
+    Toasts.show(e.message, { type: "error" });
   }
 }
 function button(text, callback) {
@@ -93,11 +105,13 @@ async function browser(path) {
     const value = await action("browser", { file: path });
     if (tab) tab.location = value.url;
     else {
-      error("Разрешите открытие новой вкладки и повторите загрузку.");
+      Toasts.show("Разрешите открытие новой вкладки и повторите загрузку.", {
+        type: "error",
+      });
     }
   } catch (e) {
     if (tab) tab.close();
-    error(e.message);
+    Toasts.show(e.message, { type: "error" });
   }
 }
 function render(data) {
@@ -212,10 +226,11 @@ async function refresh() {
     if (requested === revision) render(data);
     for (const id of ["batch", "pause-downloads", "cancel-downloads", "folder"])
       $(id).disabled = false;
+    Toasts.problem("connection", "");
   } catch (e) {
     connected = false;
     $("connection").textContent = "Нет связи";
-    error(e.message);
+    Toasts.problem("connection", "Не удалось обновить загрузки. " + e.message);
     for (const id of ["batch", "pause-downloads", "cancel-downloads", "folder"])
       $(id).disabled = true;
   } finally {
@@ -272,6 +287,9 @@ $("url-form").addEventListener("submit", async (event) => {
     await action("enqueue", { file: chosen, url: $("download-url").value });
     $("download-url").value = "";
     $("url-dialog").close();
+    Toasts.show("Файл добавлен в очередь по указанной ссылке.", {
+      type: "success",
+    });
     refresh();
   } catch (e) {
     $("url-error").textContent = e.message;

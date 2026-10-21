@@ -45,7 +45,6 @@
       ><button id="folder" class="button">Открыть папку</button>
     </div>
     <p id="destination" class="destination"></p>
-    <div id="log-error" role="alert" hidden></div>
     <div class="log-tools">
       <button id="tab-queue" class="button active">Очередь загрузок</button
       ><button id="tab-files" class="button">Файлы Диска</button
@@ -104,6 +103,13 @@
       </form>
     </dialog>
     <script src="/list-motion.js"></script>
+    <div
+      id="toast-stack"
+      class="toast-stack"
+      role="region"
+      aria-label="Уведомления"
+    ></div>
+    <script src="/toasts.js"></script>
     <script src="/recovery.js"></script>
   </body>
 </html>

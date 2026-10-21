@@ -163,7 +163,12 @@
         <span id="root-path">Папка синхронизации</span>
       </footer>
     </main>
-    <div id="toast" class="toast" role="status" hidden></div>
+    <div
+      id="toast-stack"
+      class="toast-stack"
+      role="region"
+      aria-label="Уведомления"
+    ></div>
     <dialog id="details">
       <form method="dialog">
         <button class="dialog-close" aria-label="Закрыть">×</button>
@@ -240,6 +245,7 @@
       </div>
     </dialog>
     <script src="/list-motion.js"></script>
+    <script src="/toasts.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>
