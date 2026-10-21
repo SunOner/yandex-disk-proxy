@@ -155,6 +155,12 @@ a {
 .diagnostic-metrics article {
   min-height: 110px;
 }
+#summary-errors {
+  color: #ff8c80;
+}
+#summary-dropped {
+  color: #e6c378;
+}
 .summary-table {
   border: 1px solid #2a3749;
   border-radius: 9px;

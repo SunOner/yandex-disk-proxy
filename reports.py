@@ -1,5 +1,6 @@
 """Export bounded diagnostics locally. Configuration, keys and payloads are excluded."""
 
+import copy
 import hashlib
 import io
 import json
@@ -72,7 +73,8 @@ def bundle(model):
 
         write("summary.json", encode(sanitize(summary)))
         with model.traffic.lock:
-            current = [sanitize(r) for r in model.traffic.rows.values()]
+            current = copy.deepcopy(list(model.traffic.rows.values()))
+        current = [sanitize(r) for r in current]
         write(
             "retained.jsonl",
             b"".join((json.dumps(r, ensure_ascii=False) + "\n").encode("utf-8") for r in current),

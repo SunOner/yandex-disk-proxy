@@ -2,6 +2,7 @@ import hashlib
 import io
 import json
 import tempfile
+import threading
 import time
 import unittest
 import zipfile
@@ -257,7 +258,33 @@ class Operations(unittest.TestCase):
             self.assertIn("SECRET_AUTH", str(model.traffic.detail("secret", True)))
             (Path(folder) / "config.json").write_text("PRIVATE_CONFIG")
             (Path(folder) / "ca.key").write_text("PRIVATE_KEY")
-            with zipfile.ZipFile(io.BytesIO(reports.bundle(model))) as archive:
+            sanitize = reports.sanitize
+            checked = False
+
+            def check_responsive(value):
+                nonlocal checked
+                if isinstance(value, dict) and value.get("id") == "secret" and not checked:
+                    checked = True
+                    worker = threading.Thread(
+                        target=lambda: model.traffic.add(
+                            {
+                                "id": "during-export",
+                                "type": "file",
+                                "phase": "complete",
+                                "operation": "pin",
+                            }
+                        ),
+                        daemon=True,
+                    )
+                    worker.start()
+                    worker.join(1)
+                    self.assertFalse(worker.is_alive(), "Export blocks incoming diagnostics")
+                return sanitize(value)
+
+            with patch.object(reports, "sanitize", side_effect=check_responsive):
+                payload = reports.bundle(model)
+            self.assertTrue(checked)
+            with zipfile.ZipFile(io.BytesIO(payload)) as archive:
                 names = archive.namelist()
                 data = b"".join(archive.read(name) for name in names)
                 for value in (

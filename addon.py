@@ -90,7 +90,7 @@ class Tracker:
                             "X-Local-Key": self.key,
                         },
                     )
-                    self.opener.open(req, timeout=2).close()
+                    self.opener.open(req, timeout=10).close()
                     delivered = True
                 if time.monotonic() - last >= 0.5:
                     req = urllib.request.Request(
