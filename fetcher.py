@@ -387,7 +387,11 @@ class Recovery:
             self.queue.put((time.monotonic(), self.sequence, rel))
             if start:
                 self.save()
-            if start and not self.started:
+                self.start_workers()
+
+    def start_workers(self):
+        with self.lock:
+            if self.queued and not self.started and not self.closed:
                 self.started = True
                 for _ in range(self.workers):
                     threading.Thread(target=self.worker, daemon=True).start()
@@ -403,10 +407,7 @@ class Recovery:
                 count += 1
         with self.lock:
             self.save()
-            if count and not self.started:
-                self.started = True
-                for _ in range(self.workers):
-                    threading.Thread(target=self.worker, daemon=True).start()
+        self.start_workers()
         return count
 
     def control(self, action, rel=None):
@@ -440,11 +441,15 @@ class Recovery:
         for path in paused:
             row = self.rows(path)
             if row and row.get("status") != "local":
-                self.enqueue(path)
+                self.enqueue(path, start=False)
             else:
                 self.update(
                     path, status="cancelled", error="Файл больше не входит в оставшуюся очередь"
                 )
+        if paused:
+            with self.lock:
+                self.save()
+            self.start_workers()
 
     def check(self, rel):
         if self.closed:
