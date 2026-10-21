@@ -7,6 +7,7 @@ const LivePanel = (() => {
     "requests",
     "operations",
     "recovery",
+    "metrics",
   ]);
   function subscribe(
     refresh,

@@ -112,6 +112,7 @@ class ChangeNotifications(unittest.TestCase):
                     httpd.shutdown()
                     thread.join()
                     httpd.server_close()
+                    model.metrics.close()
 
 
 if __name__ == "__main__":

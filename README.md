@@ -35,6 +35,23 @@ The panel follows server change notifications instead of redrawing every two sec
 
 Counter digits roll when their values change. The **⛶** button opens a fullscreen dashboard; **Esc** or **Back to files** returns to the list. If browser fullscreen is unavailable, the dashboard fills the window. Last values and their timestamp remain visible when disconnected. Reduced-motion settings are respected.
 
+## Monitoring and saved statistics
+
+**Monitoring ↗** opens six interactive charts: network speed, confirmed downloads, HTTP requests, HTTP/TLS errors, remaining files and request duration. Choose a period from one hour to three years; point at a chart or use the arrow keys to inspect a time. The browser remembers the period.
+
+Counters and history survive restarts. Existing confirmed downloads are imported with their recorded timestamps; network and queue measurements start with this version. Gaps represent missing measurements, including time when the program was closed.
+
+SQLite stores only numeric totals and time buckets in `runtime/statistics/<folder hash>.sqlite3` under the data directory. Each sync folder has a separate database. There are two tables, at most 8,299 time buckets and a 16 MiB database-file limit; SQLite's temporary journal is additional. Old detail expires automatically:
+
+| Resolution | Retention |
+| --- | --- |
+| 10 seconds | 6 hours |
+| 1 minute | 2 days |
+| 1 hour | 90 days |
+| 1 day | 3 years |
+
+Lifetime totals remain. Checkpoints run every five seconds and before exit; a crash can lose the latest five seconds of measurements. URLs, file names, tokens and request bodies are excluded from this database. Request journals keep their existing separate rotation limits.
+
 ## Stop and recover
 
 Click **Stop and restore** or close the console. The proxy restores keep-on-PC flags and restarts Disk directly. After a power failure, run the EXE again or use:

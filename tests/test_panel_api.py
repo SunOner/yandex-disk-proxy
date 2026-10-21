@@ -69,6 +69,10 @@ class PanelAccess(unittest.TestCase):
                         "/i18n.js",
                         "/list-motion.js",
                         "/live.js",
+                        "/monitoring",
+                        "/monitoring.js",
+                        "/monitoring.css",
+                        "/api/monitoring",
                         "/toasts.js",
                         "/meters.js",
                         "/requests.css",
@@ -130,6 +134,7 @@ class PanelAccess(unittest.TestCase):
                     httpd.shutdown()
                     thread.join()
                     httpd.server_close()
+                    model.metrics.close()
 
 
 if __name__ == "__main__":

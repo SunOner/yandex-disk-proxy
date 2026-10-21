@@ -7,6 +7,7 @@ import hmac
 import json
 import os
 import secrets
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -27,6 +28,8 @@ from diagnostics import JsonLog, Traffic, redact_text
 from downloads import History
 from fetcher import DownloadError, Recovery
 from inventory import scan
+from metrics import INTERVAL as STATS_INTERVAL
+from metrics import Metrics
 from operations import ANOMALIES, LABELS
 from updates import TOPICS, Updates
 from winops import (
@@ -92,6 +95,82 @@ class Model:
         self.inventory = {"scanning": False, "updated_at": None, "interval_seconds": 10}
         self.refresh_inventory()
         self.init_recovery()
+        self.metrics = None
+        self.metrics_error = None
+        self.statistics_wake = threading.Event()
+        self.init_statistics()
+
+    def init_statistics(self):
+        try:
+            self.metrics = Metrics(
+                RUNTIME / "statistics" / (file_id(str(ROOT or "unconfigured")) + ".sqlite3")
+            )
+            self.counters = collections.Counter(self.metrics.counters)
+            self.stats_sample_at = time.monotonic()
+            self.capture_statistics(initial=True)
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            self.metrics_error = str(exc)
+
+    def capture_statistics(self, initial=False):
+        with self.lock:
+            if self.metrics is None:
+                return
+            native = self.downloads.summary()
+            with self.recovery.lock:
+                direct = self.recovery.summary()
+                direct_history = (
+                    [
+                        {"size": row.get("size"), "updated": row.get("updated")}
+                        for row in self.recovery.jobs.values()
+                        if row["status"] == "verified"
+                    ]
+                    if not self.metrics.imported
+                    else []
+                )
+            counts = collections.Counter(row["status"] for row in self.files.values())
+            current = {
+                "pending_files": len(self.files) - counts["local"],
+                "pending_bytes": sum(
+                    row["size"] for row in self.files.values() if row["status"] != "local"
+                ),
+                "deferred_files": counts["deferred"],
+                "local_files": counts["local"],
+            }
+            with self.traffic.lock:
+                operations = dict(self.traffic.statistics.totals)
+            now = time.monotonic()
+            self.metrics.sample(
+                {
+                    "native_files": native["count"],
+                    "native_bytes": native["bytes"],
+                    "direct_files": direct["verified"],
+                    "direct_bytes": direct["verified_bytes"],
+                },
+                self.counters,
+                operations,
+                current,
+                elapsed=now - self.stats_sample_at,
+                initial=initial,
+            )
+            self.stats_sample_at = now
+            if not self.metrics.imported:
+                self.metrics.import_downloads(
+                    self.downloads.data["completed"].values(), direct_history
+                )
+            self.metrics_error = None
+        self.updates.changed("metrics")
+
+    def statistics_loop(self):
+        while not self.closed:
+            self.statistics_wake.wait(STATS_INTERVAL)
+            self.statistics_wake.clear()
+            if self.closed:
+                break
+            try:
+                self.capture_statistics()
+            except (OSError, ValueError, sqlite3.Error) as exc:
+                self.metrics_error = str(exc)
+                self.updates.changed("metrics")
 
     def recovery_rows(self, rel):
         with self.lock:
@@ -812,6 +891,7 @@ class Model:
                 "certificate_thumbprint": THUMB,
                 "tls": self.tls,
                 "log_error": self.log_error,
+                "statistics_error": self.metrics_error,
             }
 
     def selected_files(self, query):
@@ -986,6 +1066,26 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/state":
             self.reply(200, ACTIVE.snapshot())
             return
+        if u.path == "/api/monitoring":
+            query = urllib.parse.parse_qs(u.query)
+            try:
+                with ACTIVE.lock:
+                    if ACTIVE.metrics is None:
+                        self.reply(
+                            503,
+                            {"error": "Statistics are unavailable", "detail": ACTIVE.metrics_error},
+                        )
+                        return
+                    data = {
+                        **ACTIVE.metrics.read(query.get("period", ["24h"])[0]),
+                        "error": ACTIVE.metrics_error,
+                    }
+                self.reply(200, data)
+            except ValueError as exc:
+                self.reply(400, {"error": str(exc)})
+            except (OSError, sqlite3.Error):
+                self.reply(503, {"error": "Statistics are unavailable"})
+            return
         if u.path == "/api/files":
             self.reply(200, ACTIVE.selected_files(urllib.parse.parse_qs(u.query)))
             return
@@ -1059,6 +1159,9 @@ class Handler(BaseHTTPRequestHandler):
             "/recovery": ("recovery.html", "text/html; charset=utf-8"),
             "/recovery.js": ("recovery.js", "text/javascript; charset=utf-8"),
             "/recovery.css": ("recovery.css", "text/css; charset=utf-8"),
+            "/monitoring": ("monitoring.html", "text/html; charset=utf-8"),
+            "/monitoring.js": ("monitoring.js", "text/javascript; charset=utf-8"),
+            "/monitoring.css": ("monitoring.css", "text/css; charset=utf-8"),
         }
         if u.path in static:
             name, kind = static[u.path]
@@ -1108,13 +1211,27 @@ class Handler(BaseHTTPRequestHandler):
                         for k in ("queued", "fetching", "downloading", "retry", "waiting_session")
                     ):
                         raise ValueError("Сначала остановите прямые загрузки")
-                    ROOT, CLIENT = settings.save(data.get("root", ""), data.get("client", ""))
+                    next_root, next_client = settings.save(
+                        data.get("root", ""), data.get("client", "")
+                    )
+                    try:
+                        ACTIVE.capture_statistics()
+                    except (OSError, ValueError, sqlite3.Error):
+                        pass
+                    if ACTIVE.metrics:
+                        try:
+                            ACTIVE.metrics.close()
+                        except sqlite3.Error:
+                            pass
+                    ACTIVE.metrics = None
+                    ROOT, CLIENT = next_root, next_client
                     winops.ROOT, winops.CLIENT = ROOT, CLIENT
                     ACTIVE.files = {}
                     ACTIVE.downloads = History(history_path())
                     ACTIVE.refresh_inventory()
                     ACTIVE.recovery.close()
                     ACTIVE.init_recovery()
+                    ACTIVE.init_statistics()
             elif self.path == "/api/browse":
                 if ACTIVE.session().get("phase") not in ("idle", "stopped"):
                     raise ValueError("Сначала остановите прокси")
@@ -1221,6 +1338,8 @@ def main():
         ACTIVE.directory = unresolved[-1]
     threading.Thread(target=ACTIVE.monitor, daemon=True).start()
     threading.Thread(target=ACTIVE.inventory_loop, daemon=True).start()
+    statistics_thread = threading.Thread(target=ACTIVE.statistics_loop, daemon=True)
+    statistics_thread.start()
     print(
         "\n"
         + runtime.PRODUCT_NAME
@@ -1243,8 +1362,14 @@ def main():
         pass
     finally:
         ACTIVE.recovery.close()
+        try:
+            ACTIVE.capture_statistics()
+        except (OSError, ValueError, sqlite3.Error):
+            pass
         ACTIVE.stop()
         ACTIVE.closed = True
+        ACTIVE.statistics_wake.set()
+        statistics_thread.join(timeout=3)
         ACTIVE.updates.close()
         ACTIVE.inventory_wake.set()
         if ACTIVE.worker:
@@ -1256,6 +1381,15 @@ def main():
             ACTIVE.traffic.flush(force=True)
         except OSError:
             print("Could not save the diagnostics summary.", flush=True)
+        if ACTIVE.metrics:
+            try:
+                ACTIVE.capture_statistics()
+            except (OSError, ValueError, sqlite3.Error):
+                print("Could not save the final statistics checkpoint.", flush=True)
+            try:
+                ACTIVE.metrics.close()
+            except sqlite3.Error:
+                pass
         server.server_close()
 
 

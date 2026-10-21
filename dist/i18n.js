@@ -74,8 +74,7 @@ const I18n = (() => {
     " осталось сохранить": " left to save",
     "Всего на ПК: ": "Total on this PC: ",
     " · с ": " · since ",
-    "Ответы Яндекса за запуск панели":
-      "Yandex responses during this panel session",
+    "Сохранённые ответы Яндекса": "Recorded Yandex responses",
     "Временно снята отметка хранения": "Offline selection temporarily removed",
     "Учтённые потоки, включая повторы": "Observed traffic, including retries",
     "Папка синхронизации ещё не выбрана": "No sync folder selected",
@@ -448,8 +447,7 @@ const I18n = (() => {
     "НОВЫЕ ЗАГРУЗКИ": "NEW DOWNLOADS",
     "Всего на ПК: —": "Total on this PC: —",
     "ОТВЕТЫ 500": "HTTP 500 RESPONSES",
-    "ответы Яндекса за запуск панели":
-      "Yandex responses during this panel session",
+    "сохранённые ответы Яндекса": "Recorded Yandex responses",
     ОТЛОЖЕНО: "DEFERRED",
     "временно снята отметка хранения": "offline selection temporarily removed",
     "Счётчики на весь экран": "Fullscreen counters",
@@ -576,6 +574,69 @@ const I18n = (() => {
     "Режим: откладывание": "Mode: deferral",
     "Режим: ограничение повторов": "Mode: retry limiting",
     "Режим: наблюдение": "Mode: observation",
+    ...{
+      Мониторинг: "Monitoring",
+      "Мониторинг ↗": "Monitoring ↗",
+      "Мониторинг — Yandex Disk Proxy": "Monitoring — Yandex Disk Proxy",
+      "Сохранённые итоги": "Saved totals",
+      "Загрузки приложения": "Native downloads",
+      "Получено по сети": "Received over network",
+      "Ответы HTTP 500": "HTTP 500 responses",
+      "Время запроса": "Request time",
+      "Среднее по завершённым HTTP-запросам": "Average completed HTTP request",
+      "История по времени": "Timeline",
+      Период: "Period",
+      "1 час": "1 hour",
+      "6 часов": "6 hours",
+      "24 часа": "24 hours",
+      "7 дней": "7 days",
+      "30 дней": "30 days",
+      "90 дней": "90 days",
+      "1 год": "1 year",
+      "3 года": "3 years",
+      "Хранение статистики": "Statistics storage",
+      "База и служебный журнал": "Database and journal",
+      "Интервалы в базе": "Stored intervals",
+      "Лимит файла базы": "Database file limit",
+      "10 секунд — 6 часов; 1 минута — 2 дня; 1 час — 90 дней; 1 день — 3 года. Общие итоги не удаляются.":
+        "10 seconds — 6 hours; 1 minute — 2 days; 1 hour — 90 days; 1 day — 3 years. Lifetime totals are retained.",
+      "Сохраняются только числа. URL, имена файлов, токены и тела запросов в базу не записываются.":
+        "Only numeric statistics are stored. URLs, file names, tokens and request bodies are excluded.",
+      "История подтверждённых загрузок перенесена с исходным временем. Остальные графики начинаются с запуска мониторинга; пропуски означают отсутствие измерений.":
+        "Confirmed download history keeps its original timestamps. Other charts start when monitoring begins; gaps mean no measurements.",
+      "Сохранение каждые 5 секунд и перед выходом. При аварийном завершении могут пропасть последние 5 секунд измерений.":
+        "Saved every 5 seconds and before exit. An unexpected shutdown may lose the last 5 seconds of measurements.",
+      "Сетевой трафик": "Network traffic",
+      Скорость: "Speed",
+      Получено: "Received",
+      Отправлено: "Sent",
+      "Подтверждённые загрузки": "Confirmed downloads",
+      "Файлов за интервал": "Files per interval",
+      Приложение: "Native client",
+      Прямые: "Direct queue",
+      "HTTP-запросы": "HTTP requests",
+      "За интервал": "Per interval",
+      "Ошибки HTTP": "HTTP errors",
+      "Ошибки TLS": "TLS errors",
+      Файлы: "Files",
+      Осталось: "Remaining",
+      Отложено: "Deferred",
+      "Время HTTP-запроса": "HTTP request time",
+      "Среднее за интервал": "Average per interval",
+      Длительность: "Duration",
+      "Стрелки — время, Home и End — начало и конец.":
+        "Arrow keys move through time; Home and End jump to the first and last point.",
+      "Нет измерений за этот период": "No measurements in this period",
+      "Сохранено: ": "Saved: ",
+      "Интервал: ": "Interval: ",
+      " с": " s",
+      "/с": "/s",
+      "Не удалось сохранить статистику. Откройте мониторинг.":
+        "Could not save statistics. Open monitoring.",
+      "Не удалось обновить мониторинг. ": "Could not refresh monitoring. ",
+      "Статистика недоступна": "Statistics are unavailable",
+      "Неизвестный период мониторинга": "Unknown monitoring period",
+    },
   };
   const storageKey = "ydp.preferences.v1";
   const allowed = {
@@ -585,6 +646,7 @@ const I18n = (() => {
     logLevel: ["all", "errors", "unusual"],
     logKind: ["", "http", "tls", "connection", "websocket", "file"],
     recoveryView: ["queue", "files"],
+    monitorPeriod: ["1h", "6h", "24h", "7d", "30d", "90d", "1y", "3y"],
   };
   function clean(value) {
     const result = {};

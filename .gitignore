@@ -15,6 +15,9 @@ __pycache__/
 *.jsonl
 *.har
 *.mitm
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
 screenshots/
 verification*.json
 download-verification.json

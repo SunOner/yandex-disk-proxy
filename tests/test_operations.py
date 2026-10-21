@@ -303,6 +303,7 @@ class Operations(unittest.TestCase):
                     self.assertEqual(
                         hashlib.sha256(archive.read(entry["name"])).hexdigest(), entry["sha256"]
                     )
+            model.metrics.close()
 
 
 if __name__ == "__main__":

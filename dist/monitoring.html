@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en" data-i18n-ready="false">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title data-i18n="Мониторинг — Yandex Disk Proxy">
+      Monitoring — Yandex Disk Proxy
+    </title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/monitoring.css" />
+  </head>
+  <body class="monitoring-page">
+    <header class="monitor-header">
+      <div>
+        <a href="/">← Yandex Disk Proxy</a>
+        <h1 data-i18n="Мониторинг">Monitoring</h1>
+      </div>
+      <div class="monitor-controls">
+        <a href="/requests" data-i18n="Запросы и журнал ↗"
+          >Requests &amp; logs ↗</a
+        ><span id="connection" role="status" data-i18n-once="Подключение…"
+          >Connecting…</span
+        >
+      </div>
+    </header>
+    <section aria-labelledby="totals-title">
+      <h2 id="totals-title" data-i18n="Сохранённые итоги">Saved totals</h2>
+      <div class="monitor-totals">
+        <article>
+          <h3 data-i18n="Загрузки приложения">Native downloads</h3>
+          <strong id="native-files">—</strong>
+          <p id="native-bytes">—</p>
+        </article>
+        <article>
+          <h3 data-i18n="Прямые загрузки">Direct downloads</h3>
+          <strong id="direct-files">—</strong>
+          <p id="direct-bytes">—</p>
+        </article>
+        <article>
+          <h3 data-i18n="Получено по сети">Received over network</h3>
+          <strong id="received">—</strong>
+          <p id="sent">—</p>
+        </article>
+        <article>
+          <h3 data-i18n="Ответы HTTP 500">HTTP 500 responses</h3>
+          <strong id="errors500">—</strong>
+          <p id="http-errors">—</p>
+        </article>
+        <article>
+          <h3 data-i18n="Осталось скачать">Left to download</h3>
+          <strong id="pending">—</strong>
+          <p id="pending-bytes">—</p>
+        </article>
+        <article>
+          <h3 data-i18n="Время запроса">Request time</h3>
+          <strong id="request-time">—</strong>
+          <p data-i18n="Среднее по завершённым HTTP-запросам">
+            Average completed HTTP request
+          </p>
+        </article>
+      </div>
+    </section>
+    <section aria-labelledby="timeline-title">
+      <div class="timeline-heading">
+        <div>
+          <h2 id="timeline-title" data-i18n="История по времени">Timeline</h2>
+          <p id="saved-at">—</p>
+        </div>
+        <label
+          ><span data-i18n="Период">Period</span>
+          <select id="period">
+            <option value="1h" data-i18n="1 час">1 hour</option>
+            <option value="6h" data-i18n="6 часов">6 hours</option>
+            <option value="24h" data-i18n="24 часа">24 hours</option>
+            <option value="7d" data-i18n="7 дней">7 days</option>
+            <option value="30d" data-i18n="30 дней">30 days</option>
+            <option value="90d" data-i18n="90 дней">90 days</option>
+            <option value="1y" data-i18n="1 год">1 year</option>
+            <option value="3y" data-i18n="3 года">3 years</option>
+          </select></label
+        >
+      </div>
+      <div class="monitor-charts" id="charts"></div>
+    </section>
+    <details class="storage">
+      <summary data-i18n="Хранение статистики">Statistics storage</summary>
+      <dl>
+        <dt data-i18n="База и служебный журнал">Database and journal</dt>
+        <dd id="storage-size">—</dd>
+        <dt data-i18n="Интервалы в базе">Stored intervals</dt>
+        <dd id="storage-rows">—</dd>
+        <dt data-i18n="Лимит файла базы">Database file limit</dt>
+        <dd id="storage-limit">—</dd>
+      </dl>
+      <p
+        data-i18n="10 секунд — 6 часов; 1 минута — 2 дня; 1 час — 90 дней; 1 день — 3 года. Общие итоги не удаляются."
+      >
+        10 seconds — 6 hours; 1 minute — 2 days; 1 hour — 90 days; 1 day — 3
+        years. Lifetime totals are retained.
+      </p>
+      <p
+        data-i18n="Сохраняются только числа. URL, имена файлов, токены и тела запросов в базу не записываются."
+      >
+        Only numeric statistics are stored. URLs, file names, tokens and request
+        bodies are excluded.
+      </p>
+      <p
+        data-i18n="История подтверждённых загрузок перенесена с исходным временем. Остальные графики начинаются с запуска мониторинга; пропуски означают отсутствие измерений."
+      >
+        Confirmed download history keeps its original timestamps. Other charts
+        start when monitoring begins; gaps mean no measurements.
+      </p>
+      <p
+        data-i18n="Сохранение каждые 5 секунд и перед выходом. При аварийном завершении могут пропасть последние 5 секунд измерений."
+      >
+        Saved every 5 seconds and before exit. An unexpected shutdown may lose
+        the last 5 seconds of measurements.
+      </p>
+    </details>
+    <div class="locale-switcher locale-floating" data-language-picker></div>
+    <script src="/i18n.js"></script>
+    <script src="/live.js"></script>
+    <div
+      id="toast-stack"
+      class="toast-stack"
+      role="region"
+      aria-label="Notifications"
+      data-i18n-aria-label="Уведомления"
+    ></div>
+    <script src="/toasts.js"></script>
+    <script src="/monitoring.js"></script>
+  </body>
+</html>

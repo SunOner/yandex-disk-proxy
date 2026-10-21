@@ -2,7 +2,7 @@
 
 import threading
 
-TOPICS = frozenset(("state", "files", "events", "requests", "operations", "recovery"))
+TOPICS = frozenset(("state", "files", "events", "requests", "operations", "recovery", "metrics"))
 
 
 class Updates:

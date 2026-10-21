@@ -281,6 +281,13 @@ class OperationStats:
         self.totals["unknown"] += int(operation == "other")
         self.totals["sent_bytes"] += max(0, row.get("sent_bytes", 0))
         self.totals["received_bytes"] += max(0, row.get("received_bytes", 0))
+        if kind == "http":
+            self.totals["http500"] += int(row.get("status") == 500)
+            self.totals["retries"] += int(bool(row.get("retry_after_error")))
+            self.totals["cancelled"] += int("client disconnected" in row.get("error", "").lower())
+            if isinstance(row.get("duration_ms"), (int, float)):
+                self.totals["http_duration_ms"] += max(0, row["duration_ms"])
+                self.totals["http_timed"] += 1
 
     def snapshot(self):
         def rows(values):

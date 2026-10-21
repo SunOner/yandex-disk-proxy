@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0
+
+- Added a Monitoring page with six interactive time charts, eight ranges, English/Russian labels and live updates.
+- Main counters and numeric statistics now persist in SQLite, separately for each sync folder. Existing confirmed download history retains its timestamps.
+- Two tables retain at most 8,299 aggregate time buckets across four resolutions. Expired detail is pruned automatically; lifetime totals remain. The database file is capped at 16 MiB.
+- Statistics are checkpointed every five seconds and on clean exit. No URLs, file identities, headers, tokens or request bodies are stored in SQLite.
+
 ## 0.6.1
 
 - Panel updates now follow server change notifications, with bounded refreshes and polling only when the stream is unavailable.

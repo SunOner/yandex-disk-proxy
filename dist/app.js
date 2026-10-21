@@ -365,7 +365,7 @@ function renderMetrics(state, fresh = true) {
       errors: {
         text: number(state.counters.http500),
         value: state.counters.http500 || 0,
-        detail: I18n.t("Ответы Яндекса за запуск панели"),
+        detail: I18n.t("Сохранённые ответы Яндекса"),
       },
       deferred: {
         text: number(state.counts.deferred),
@@ -403,6 +403,12 @@ async function refresh(topics = null) {
     });
     if (!response.ok) throw new Error(I18n.t("Панель недоступна"));
     snapshot = await response.json();
+    Toasts.problem(
+      "statistics",
+      snapshot.statistics_error
+        ? I18n.t("Не удалось сохранить статистику. Откройте мониторинг.")
+        : "",
+    );
     connected = true;
     sessionView(snapshot);
     renderMetrics(snapshot);
