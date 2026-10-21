@@ -181,6 +181,27 @@ class RecoveryIntegrity(unittest.TestCase):
         self.assertEqual(self.manager.jobs["file.bin"]["status"], "verified")
         self.assertNotIn("Range", self.manager.transport.open_download.call_args.args[1])
 
+    def test_restart_is_paused_and_active_jobs_are_visible_first(self):
+        manager = self.manager
+        manager.jobs["z-active.bin"] = {
+            "path": "z-active.bin",
+            "status": "downloading",
+            "size": 100,
+        }
+        manager.save()
+        self.assertEqual(manager.snapshot()["rows"][0]["path"], "z-active.bin")
+        restarted = Recovery(
+            self.root,
+            self.base / "state",
+            Mock(),
+            Mock(),
+            Mock(),
+            destination=self.base / "Recovery",
+        )
+        self.addCleanup(restarted.close)
+        self.assertTrue(restarted.paused)
+        self.assertTrue(all(j["status"] == "paused" for j in restarted.jobs.values()))
+
 
 class RoutesAndDiagnostics(unittest.TestCase):
     def test_urls_and_paths_cannot_escape_scope(self):

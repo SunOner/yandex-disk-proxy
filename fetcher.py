@@ -248,6 +248,7 @@ class Recovery:
                         "waiting_session",
                     ):
                         job["status"] = "paused"
+                self.paused = any(job["status"] == "paused" for job in self.jobs.values())
         self.transport = Transport(emit)
 
     def save(self):
@@ -774,7 +775,23 @@ class Recovery:
     def snapshot(self, search="", offset=0):
         with self.lock:
             jobs = [dict(j) for p, j in self.jobs.items() if search.casefold() in p.casefold()]
-            jobs.sort(key=lambda j: (j["status"] == "verified", j["path"].casefold()))
+            order = {
+                name: index
+                for index, name in enumerate(
+                    (
+                        "downloading",
+                        "fetching",
+                        "waiting_session",
+                        "retry",
+                        "failed",
+                        "queued",
+                        "paused",
+                        "cancelled",
+                        "verified",
+                    )
+                )
+            }
+            jobs.sort(key=lambda j: (order.get(j["status"], 9), j["path"].casefold()))
             offset = min(max(0, offset), max(0, ((len(jobs) - 1) // 100) * 100))
             return {
                 **self.summary(),
