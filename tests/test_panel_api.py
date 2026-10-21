@@ -61,8 +61,23 @@ class PanelAccess(unittest.TestCase):
                         self.assertNotIn("SECRET_", text)
                     raw = post({"Origin": url, "X-Panel-Nonce": server.NONCE})
                     self.assertEqual(raw["request_headers"][0][1], "Bearer SECRET_HEADER")
-                    for route in ("/requests", "/requests.js", "/requests.css"):
+                    for route in (
+                        "/requests",
+                        "/requests.js",
+                        "/requests.css",
+                        "/recovery",
+                        "/recovery.js",
+                        "/recovery.css",
+                        "/api/recovery",
+                    ):
                         self.assertEqual(urllib.request.urlopen(url + route, timeout=3).status, 200)
+                    for route in ("enqueue", "batch", "browser", "control"):
+                        with self.assertRaises(urllib.error.HTTPError) as error:
+                            urllib.request.urlopen(
+                                urllib.request.Request(url + "/api/recovery/" + route, data=b"{}"),
+                                timeout=3,
+                            )
+                        self.assertEqual(error.exception.code, 403)
                 finally:
                     httpd.shutdown()
                     thread.join()

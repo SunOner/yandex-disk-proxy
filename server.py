@@ -24,6 +24,7 @@ import windows_ui
 import winops
 from diagnostics import JsonLog, Traffic, redact_text
 from downloads import History
+from fetcher import DownloadError, Recovery
 from winops import (
     APP,
     CLIENT,
@@ -82,6 +83,23 @@ class Model:
         self.reported_stop = None
         self.downloads = History(history_path())
         self.refresh_inventory()
+        self.init_recovery()
+
+    def recovery_rows(self, rel):
+        with self.lock:
+            if rel is None:
+                return sorted(self.files, key=lambda p: self.files[p]["size"])
+            row = self.files.get(rel)
+            return row.copy() if row else None
+
+    def init_recovery(self):
+        self.recovery = Recovery(
+            ROOT,
+            RUNTIME / "recovery" / file_id(str(ROOT)),
+            self.recovery_rows,
+            info,
+            lambda kind, **values: self.event({"event": kind, **values}),
+        )
 
     def refresh_inventory(self):
         if ROOT is None or not ROOT.is_dir():
@@ -294,6 +312,7 @@ class Model:
             if kind == "traffic":
                 try:
                     self.traffic.add(event.get("record"))
+                    self.recovery.observe(event.get("record") or {})
                 except OSError as exc:
                     self.log_error = "Не удалось записать запросы: " + type(exc).__name__
                 return
@@ -302,7 +321,17 @@ class Model:
             if rel and row is None:
                 self.counters["unmatched"] += 1
                 return
-            if kind == "api_health":
+            if kind in ("recovery_verified", "recovery_error"):
+                self.log(
+                    kind,
+                    "Прямая загрузка проверена"
+                    if kind == "recovery_verified"
+                    else "Прямая загрузка: повтор или ошибка",
+                    rel,
+                    reason=event.get("reason", ""),
+                    bytes=event.get("bytes", 0),
+                )
+            elif kind == "api_health":
                 self.counters["api_success"] += 1
             elif kind in ("tls_error", "tls_ok"):
                 side = event.get("side", "client")
@@ -441,7 +470,15 @@ class Model:
             elif kind == "network_error":
                 reason = event.get("reason", "connection")
                 self.counters[reason] += 1
-                self.log("network_error", "Сетевая ошибка: " + reason, rel)
+                self.log(
+                    "client_cancelled" if reason == "client_cancelled" else "network_error",
+                    "Клиент отменил запрос"
+                    if reason == "client_cancelled"
+                    else "Сетевая ошибка: " + reason,
+                    rel,
+                )
+                if reason == "client_cancelled" and row["status"] in ("requesting", "downloading"):
+                    row["status"] = "waiting"
                 if reason != "client_cancelled" and row["status"] not in (
                     "local",
                     "deferred",
@@ -591,6 +628,8 @@ class Model:
                     row["size"] for row in self.files.values() if row["status"] != "local"
                 ),
                 "downloads": self.downloads.summary(),
+                "recovery": self.recovery.summary(),
+                "network": self.traffic.summary(),
                 "counters": dict(self.counters),
                 "events": list(self.events)[:30],
                 "cleanup": self.latest_cleanup,
@@ -714,6 +753,27 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/files":
             self.reply(200, ACTIVE.selected_files(urllib.parse.parse_qs(u.query)))
             return
+        if u.path == "/api/recovery":
+            query = urllib.parse.parse_qs(u.query)
+            try:
+                offset = int(query.get("offset", ["0"])[0])
+            except ValueError:
+                offset = 0
+            self.reply(200, ACTIVE.recovery.snapshot(query.get("q", [""])[0], offset))
+            return
+        if u.path.startswith("/browser-download/"):
+            try:
+                link = ACTIVE.recovery.take_ticket(u.path.removeprefix("/browser-download/"))
+            except ValueError as exc:
+                self.reply(410, {"error": str(exc)})
+                return
+            self.send_response(302)
+            self.send_header("Location", link)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         if u.path == "/api/requests":
             query = urllib.parse.parse_qs(u.query)
             try:
@@ -738,6 +798,9 @@ class Handler(BaseHTTPRequestHandler):
             "/requests": ("requests.html", "text/html; charset=utf-8"),
             "/requests.js": ("requests.js", "text/javascript; charset=utf-8"),
             "/requests.css": ("requests.css", "text/css; charset=utf-8"),
+            "/recovery": ("recovery.html", "text/html; charset=utf-8"),
+            "/recovery.js": ("recovery.js", "text/javascript; charset=utf-8"),
+            "/recovery.css": ("recovery.css", "text/css; charset=utf-8"),
         }
         if u.path in static:
             name, kind = static[u.path]
@@ -782,11 +845,18 @@ class Handler(BaseHTTPRequestHandler):
                 with ACTIVE.lock:
                     if ACTIVE.session().get("phase") not in ("idle", "stopped"):
                         raise ValueError("Сначала остановите прокси и завершите восстановление")
+                    if any(
+                        ACTIVE.recovery.summary()["counts"].get(k, 0)
+                        for k in ("queued", "fetching", "downloading", "retry", "waiting_session")
+                    ):
+                        raise ValueError("Сначала остановите прямые загрузки")
                     ROOT, CLIENT = settings.save(data.get("root", ""), data.get("client", ""))
                     winops.ROOT, winops.CLIENT = ROOT, CLIENT
                     ACTIVE.files = {}
                     ACTIVE.downloads = History(history_path())
                     ACTIVE.refresh_inventory()
+                    ACTIVE.recovery.close()
+                    ACTIVE.init_recovery()
             elif self.path == "/api/browse":
                 if ACTIVE.session().get("phase") not in ("idle", "stopped"):
                     raise ValueError("Сначала остановите прокси")
@@ -796,6 +866,20 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/request-detail":
                 self.reply(200, ACTIVE.traffic.detail(data.get("id"), data.get("reveal") is True))
                 return
+            elif self.path == "/api/recovery/enqueue":
+                ACTIVE.recovery.enqueue(data.get("file", ""), data.get("url"))
+            elif self.path == "/api/recovery/batch":
+                self.reply(200, {"queued": ACTIVE.recovery.batch()})
+                return
+            elif self.path == "/api/recovery/control":
+                ACTIVE.recovery.control(data.get("action"), data.get("file"))
+            elif self.path == "/api/recovery/browser":
+                ticket = ACTIVE.recovery.browser_ticket(data.get("file", ""))
+                self.reply(200, {"url": "/browser-download/" + ticket})
+                return
+            elif self.path == "/api/recovery/folder":
+                ACTIVE.recovery.target.mkdir(parents=True, exist_ok=True)
+                runtime.external_popen(["explorer.exe", str(ACTIVE.recovery.target)])
             elif self.path in ("/api/repair-ca", "/api/restart-client"):
                 ACTIVE.worker_action(
                     "repair_ca" if self.path.endswith("repair-ca") else "restart_client"
@@ -823,7 +907,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(404, {"error": "Not found"})
                 return
             self.reply(200, {"ok": True})
-        except (ValueError, TypeError, OSError) as exc:
+        except (ValueError, TypeError, OSError, DownloadError) as exc:
             ACTIVE.log("action_error", "Действие не выполнено: " + self.path, reason=str(exc))
             self.reply(400, {"error": str(exc)[:180]})
 
@@ -881,6 +965,7 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        ACTIVE.recovery.close()
         ACTIVE.stop()
         ACTIVE.closed = True
         if ACTIVE.worker:

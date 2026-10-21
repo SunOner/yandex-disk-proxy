@@ -141,6 +141,8 @@ class Tracker:
             "method": request.method,
             "url": request.url[:8000],
             "http_version": request.http_version,
+            "client": "disk",
+            "route": "proxy",
         }
         if phase == "request":
             headers, length = [], 0
@@ -158,6 +160,10 @@ class Tracker:
                 response_version=flow.response.http_version,
                 source="local" if flow.metadata.get("ydm_synthetic") else "upstream",
             )
+            if getattr(flow.response, "timestamp_start", None):
+                record["headers_ms"] = round(
+                    max(0, flow.response.timestamp_start - request.timestamp_start) * 1000
+                )
             if phase == "response":
                 headers, length = [], 0
                 for key, value in flow.response.headers.items(multi=True):
@@ -169,9 +175,12 @@ class Tracker:
                 record["response_headers"] = headers
         if phase in ("complete", "error"):
             record["duration_ms"] = round(max(0, time.time() - request.timestamp_start) * 1000)
+            record["received_bytes"] = flow.metadata.get("ydm_received", 0)
+            if "ydm_first_byte_ms" in flow.metadata:
+                record["first_byte_ms"] = flow.metadata["ydm_first_byte_ms"]
         if flow.error:
             record["error"] = str(flow.error)[:4000]
-        rel = flow.metadata.get("ydm_file")
+        rel = flow.metadata.get("ydm_file") or self.label(flow)
         if rel:
             record["file"] = rel
         self.emit("traffic", record=record)
@@ -287,11 +296,18 @@ class Tracker:
 
             def count(chunk):
                 nonlocal amount, last
+                if chunk and "ydm_first_byte_ms" not in flow.metadata:
+                    flow.metadata["ydm_first_byte_ms"] = round(
+                        max(0, time.time() - flow.request.timestamp_start) * 1000
+                    )
+                flow.metadata["ydm_received"] = flow.metadata.get("ydm_received", 0) + len(chunk)
                 amount += len(chunk)
+                flow.metadata["ydm_unreported"] = amount
                 if not chunk or time.monotonic() - last >= 0.5:
                     if amount:
                         self.emit("bytes", file=rel, bytes=amount, flow=flow.id)
                     amount = 0
+                    flow.metadata["ydm_unreported"] = 0
                     last = time.monotonic()
                 return chunk
 
@@ -315,6 +331,13 @@ class Tracker:
             )
 
     def error(self, flow):
+        if flow.metadata.get("ydm_unreported") and flow.metadata.get("ydm_file"):
+            self.emit(
+                "bytes",
+                file=flow.metadata["ydm_file"],
+                bytes=flow.metadata.pop("ydm_unreported"),
+                flow=flow.id,
+            )
         self.diagnostic(flow, "error")
         rel = flow.metadata.get("ydm_file")
         if rel:

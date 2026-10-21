@@ -878,3 +878,7 @@ dd {
 .event.warning .event-msg {
   color: #e6c378;
 }
+.row-action {
+  display: inline-block;
+  text-decoration: none;
+}

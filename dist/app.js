@@ -212,6 +212,13 @@ function renderRows(data) {
     size.append(bar);
     tr.append(size);
     const actions = node("td");
+    if (row.status !== "local") {
+      const direct = node("a", "row-action", "Скачать…");
+      direct.href = "/recovery?" + new URLSearchParams({ q: row.path });
+      direct.target = "_blank";
+      direct.rel = "noopener";
+      actions.append(direct);
+    }
     if (snapshot.session.phase === "active" && row.status !== "local") {
       if (row.status === "deferred") {
         const retry = node("button", "row-action", "Повторить");

@@ -71,6 +71,16 @@ function format(row) {
     row.duration_ms !== undefined
       ? `Длительность: ${row.duration_ms} мс`
       : "Запрос выполняется",
+    row.route
+      ? `Маршрут: ${row.client === "recovery" ? "прямая загрузка" : "Диск через прокси"}`
+      : "",
+    row.headers_ms !== undefined ? `Заголовки: ${row.headers_ms} мс` : "",
+    row.first_byte_ms !== undefined
+      ? `Первый байт: ${row.first_byte_ms} мс`
+      : "",
+    row.received_bytes !== undefined
+      ? `Получено: ${row.received_bytes} байт`
+      : "",
     row.error,
     row.headers_truncated ? "Часть заголовков обрезана по лимиту размера" : "",
     row.original_available === false

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Прямые загрузки — Диск</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/requests.css" />
+    <link rel="stylesheet" href="/recovery.css" />
+  </head>
+  <body class="diagnostics-page">
+    <header class="log-header">
+      <a href="/">← Диск</a>
+      <h1>Прямые загрузки</h1>
+      <a href="/requests" target="_blank" rel="noopener">Запросы ↗</a
+      ><span id="connection" role="status">Подключение…</span>
+    </header>
+    <p class="capture-note">
+      Только отмеченные для хранения файлы. Результат сохраняется отдельно;
+      размер и контрольная сумма проверяются. Загрузки браузера проверяйте
+      самостоятельно.
+    </p>
+    <section class="metrics recovery-metrics">
+      <article>
+        <span>ПРОВЕРЕНО</span><strong id="verified">0</strong
+        ><small id="verified-size">0 Б</small>
+      </article>
+      <article>
+        <span>ЗАГРУЖАЕТСЯ</span><strong id="active">0</strong
+        ><small id="speed">0 Б/с · до 4 файлов</small>
+      </article>
+      <article>
+        <span>ОЖИДАЮТ</span><strong id="waiting">0</strong
+        ><small id="session">Ожидание сессии Диска</small>
+      </article>
+      <article>
+        <span>ОШИБКИ</span><strong id="failed">0</strong
+        ><small id="network">Данные за 5 минут</small>
+      </article>
+    </section>
+    <div class="recovery-toolbar">
+      <button id="batch" class="button primary">Скачать оставшиеся</button
+      ><button id="pause-downloads" class="button">Приостановить</button
+      ><button id="cancel-downloads" class="button">Остановить загрузки</button
+      ><button id="folder" class="button">Открыть папку</button>
+    </div>
+    <p id="destination" class="destination"></p>
+    <div id="log-error" role="alert" hidden></div>
+    <div class="log-tools">
+      <button id="tab-queue" class="button active">Очередь загрузок</button
+      ><button id="tab-files" class="button">Файлы Диска</button
+      ><input
+        id="query"
+        type="search"
+        placeholder="Имя или часть пути"
+        aria-label="Найти файл"
+      />
+    </div>
+    <section class="recovery-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Файл</th>
+            <th>Состояние</th>
+            <th>Скачано / размер</th>
+            <th>Действия</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p id="empty" class="empty">Очередь пуста</p>
+      <footer class="log-pagination">
+        <span id="count"></span
+        ><button id="previous" class="button" aria-label="Предыдущая страница">
+          ←</button
+        ><button id="next-page" class="button" aria-label="Следующая страница">
+          →
+        </button>
+      </footer>
+    </section>
+    <dialog id="url-dialog">
+      <form id="url-form">
+        <h2>Загрузка по URL</h2>
+        <p id="url-file" class="detail-path"></p>
+        <label class="field" for="download-url"
+          >Прямая HTTPS-ссылка загрузки Яндекса</label
+        ><input
+          id="download-url"
+          type="password"
+          autocomplete="off"
+          required
+          placeholder="https://downloader.disk.yandex.ru/…"
+        />
+        <p class="detail-note">
+          Ссылка используется только для выбранного файла. Проверка по
+          контрольной сумме из API. Адрес хранится в памяти до закрытия
+          приложения.
+        </p>
+        <p id="url-error" class="dialog-error" hidden></p>
+        <div class="dialog-actions">
+          <button id="url-cancel" class="button" type="button">Отмена</button
+          ><button class="button primary" type="submit">Скачать</button>
+        </div>
+      </form>
+    </dialog>
+    <script src="/recovery.js"></script>
+  </body>
+</html>

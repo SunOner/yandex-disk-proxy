@@ -225,6 +225,31 @@ class Traffic:
                 "capacity": self.max_records,
             }
 
+    def summary(self):
+        with self.lock:
+            rows = [
+                r
+                for r in self.rows.values()
+                if r.get("type") == "http" and time.time() - r.get("timestamp", 0) < 300
+            ]
+            durations = sorted(
+                r["headers_ms"] for r in rows if isinstance(r.get("headers_ms"), (int, float))
+            )
+            return {
+                "window_seconds": 300,
+                "requests": len(rows),
+                "received_bytes": sum(r.get("received_bytes", 0) for r in rows),
+                "empty_downloads": sum(
+                    r.get("status") in (200, 206)
+                    and r.get("phase") in ("complete", "error")
+                    and r.get("received_bytes") == 0
+                    and "storage.yandex.net" in r.get("url", "")
+                    for r in rows
+                ),
+                "cancelled": sum("client disconnected" in r.get("error", "").lower() for r in rows),
+                "headers_median_ms": durations[len(durations) // 2] if durations else None,
+            }
+
     def detail(self, identity, reveal=False):
         with self.lock:
             row = self.rows.get(identity)
