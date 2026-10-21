@@ -40,7 +40,8 @@ class Tracker:
     def __init__(self):
         self.links = collections.OrderedDict()
         self.policy = {"mode": "observe", "blocked": {}}
-        self.outbox = queue.Queue(maxsize=20000)
+        self.outbox = queue.Queue(maxsize=1000)
+        self.dropped = 0
         self.closed = False
         self.base = os.environ.get("YDM_PANEL_URL", "")
         self.key = os.environ.get("YDM_PANEL_KEY", "")
@@ -51,26 +52,35 @@ class Tracker:
         try:
             self.outbox.put_nowait(record)
         except queue.Full:
-            pass
+            self.dropped += 1
 
     def io_loop(self):
         last = 0
+        pending = None
         while not self.closed:
             batch = []
             try:
-                batch.append(self.outbox.get(timeout=0.2))
+                batch.append(pending if pending is not None else self.outbox.get(timeout=0.2))
+                pending = None
             except queue.Empty:
                 pass
-            while len(batch) < 200:
+            while len(batch) < 8:
                 try:
-                    batch.append(self.outbox.get_nowait())
+                    item = self.outbox.get_nowait()
+                    if len(json.dumps([*batch, item], ensure_ascii=False).encode("utf-8")) > 160000:
+                        pending = item
+                        break
+                    batch.append(item)
                 except queue.Empty:
                     break
             try:
                 if batch:
+                    if self.dropped:
+                        batch.append({"event": "diagnostic_dropped", "count": self.dropped})
+                        self.dropped = 0
                     req = urllib.request.Request(
                         self.base + "/internal/events",
-                        data=json.dumps(batch).encode(),
+                        data=json.dumps(batch, ensure_ascii=False).encode(),
                         headers={
                             "Content-Type": "application/json",
                             "X-Local-Key": self.key,
@@ -86,7 +96,8 @@ class Tracker:
                         self.policy = json.load(response)
                     last = time.monotonic()
             except Exception:
-                pass
+                self.dropped += len(batch)
+                time.sleep(0.25)
 
     def running(self):
         threading.Thread(target=self.io_loop, daemon=True).start()
@@ -118,8 +129,56 @@ class Tracker:
             return file_path(value) if value else None
         return self.links.get(url_key(flow.request.url))
 
+    def diagnostic(self, flow, phase):
+        request = flow.request
+        if request is None:
+            return
+        record = {
+            "id": flow.id,
+            "type": "http",
+            "phase": phase,
+            "timestamp": request.timestamp_start,
+            "method": request.method,
+            "url": request.url[:8000],
+            "http_version": request.http_version,
+        }
+        if phase == "request":
+            headers, length = [], 0
+            for key, value in request.headers.items(multi=True):
+                length += len(key) + len(value)
+                if length > 8000:
+                    record["headers_truncated"] = True
+                    break
+                headers.append([key, value])
+            record["request_headers"] = headers
+        if flow.response:
+            record.update(
+                status=flow.response.status_code,
+                reason=flow.response.reason,
+                response_version=flow.response.http_version,
+                source="local" if flow.metadata.get("ydm_synthetic") else "upstream",
+            )
+            if phase == "response":
+                headers, length = [], 0
+                for key, value in flow.response.headers.items(multi=True):
+                    length += len(key) + len(value)
+                    if length > 8000:
+                        record["headers_truncated"] = True
+                        break
+                    headers.append([key, value])
+                record["response_headers"] = headers
+        if phase in ("complete", "error"):
+            record["duration_ms"] = round(max(0, time.time() - request.timestamp_start) * 1000)
+        if flow.error:
+            record["error"] = str(flow.error)[:4000]
+        rel = flow.metadata.get("ydm_file")
+        if rel:
+            record["file"] = rel
+        self.emit("traffic", record=record)
+
     def requestheaders(self, flow):
         flow.request.stream = True
+        self.diagnostic(flow, "request")
 
     def request(self, flow):
         if flow.request.method not in ("GET", "HEAD"):
@@ -185,6 +244,7 @@ class Tracker:
             pass
 
     def responseheaders(self, flow):
+        self.diagnostic(flow, "response")
         if flow.request.method not in ("GET", "HEAD"):
             flow.response.stream = True
             return
@@ -240,6 +300,7 @@ class Tracker:
             flow.response.stream = True
 
     def response(self, flow):
+        self.diagnostic(flow, "complete")
         if flow.metadata.get("ydm_synthetic"):
             return
         if flow.metadata.get("ydm_link") and flow.response.raw_content:
@@ -254,6 +315,7 @@ class Tracker:
             )
 
     def error(self, flow):
+        self.diagnostic(flow, "error")
         rel = flow.metadata.get("ydm_file")
         if rel:
             message = str(flow.error).lower()
@@ -269,10 +331,38 @@ class Tracker:
             self.emit("network_error", file=rel, flow=flow.id, reason=reason)
 
     def tls_failed_client(self, data):
-        self.emit("tls_error", side="client")
+        self.tls_event(data, "client", False)
 
     def tls_failed_server(self, data):
-        self.emit("tls_error", side="upstream")
+        self.tls_event(data, "upstream", False)
+
+    def tls_established_client(self, data):
+        self.tls_event(data, "client", True)
+
+    def tls_established_server(self, data):
+        self.tls_event(data, "upstream", True)
+
+    def tls_event(self, data, side, success):
+        conn = data.conn
+        host = conn.sni or (data.context.server.address or ("", 0))[0]
+        record = {
+            "id": "tls-" + str(conn.id),
+            "type": "tls",
+            "side": side,
+            "phase": "complete" if success else "error",
+            "host": host,
+            "timestamp": time.time(),
+            "tls_version": conn.tls_version,
+        }
+        if not success:
+            record["error"] = str(conn.error or "TLS handshake failed")[:4000]
+        self.emit("traffic", record=record)
+        self.emit(
+            "tls_ok" if success else "tls_error",
+            side=side,
+            host=host,
+            reason=record.get("error", ""),
+        )
 
 
 addons = [Tracker()]

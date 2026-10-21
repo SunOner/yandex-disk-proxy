@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Запросы и журнал — Диск</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/requests.css" />
+  </head>
+  <body class="diagnostics-page">
+    <header class="log-header">
+      <a href="/">← Диск</a>
+      <h1>Запросы и журнал</h1>
+      <span id="connection" role="status">Подключение…</span>
+    </header>
+    <div id="health" class="health"></div>
+    <nav class="log-tabs" aria-label="Журнал">
+      <button id="tab-requests" class="button active">Запросы</button>
+      <button id="tab-events" class="button">События</button>
+    </nav>
+    <div class="log-tools">
+      <input
+        type="search"
+        id="query"
+        aria-label="Поиск в журнале"
+        placeholder="Поиск"
+      />
+      <select id="level" aria-label="Уровень">
+        <option value="all">Все</option>
+        <option value="errors">Ошибки</option>
+      </select>
+      <label><input id="pause" type="checkbox" /> Пауза обновления</label>
+      <label id="mask-label"
+        ><input id="mask" type="checkbox" checked /> Скрывать токены</label
+      >
+    </div>
+    <p class="capture-note" id="capture-note">
+      URL и заголовки запросов и ответов. Тела файлов не записываются. Оригиналы
+      — только в памяти; на диске токены скрыты.
+    </p>
+    <div id="log-error" role="alert" hidden></div>
+    <div class="log-workspace">
+      <section class="log-list" aria-label="Записи журнала">
+        <div id="records"></div>
+        <div class="log-pagination">
+          <span id="count"></span
+          ><button
+            id="previous"
+            class="button"
+            aria-label="Предыдущая страница"
+          >
+            ←</button
+          ><button
+            id="next-page"
+            class="button"
+            aria-label="Следующая страница"
+          >
+            →
+          </button>
+        </div>
+      </section>
+      <section class="log-detail" aria-label="Детали записи">
+        <h2 id="detail-title">Выберите запись</h2>
+        <pre id="original"></pre>
+      </section>
+    </div>
+    <footer class="log-footer">
+      Хранятся последние 1 000 записей, до 16 МБ в памяти. Файлы: запросы — до
+      20 МБ, события — до 8 МБ с ротацией.
+    </footer>
+    <script src="/requests.js"></script>
+  </body>
+</html>

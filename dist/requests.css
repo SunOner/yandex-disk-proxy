@@ -1,0 +1,180 @@
+.diagnostics-page {
+  display: block;
+  padding: 28px 32px;
+}
+.log-header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 14px;
+}
+.log-header h1 {
+  font-size: 22px;
+  margin: 0;
+}
+a {
+  color: #a2beff;
+  text-decoration: none;
+}
+.log-header #connection {
+  margin-left: auto;
+  color: #8bbaa4;
+  font-size: 12px;
+}
+.health {
+  color: #9aaec7;
+  font-size: 12px;
+  min-height: 26px;
+}
+.log-tabs,
+.log-tools {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 15px;
+  flex-wrap: wrap;
+}
+.log-tabs .active {
+  border-color: #7599e5;
+  color: #d2dfff;
+}
+.log-tools input[type="search"] {
+  width: 300px;
+}
+.log-tools label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+.log-tools input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: #94b2f1;
+}
+.capture-note,
+.log-footer {
+  font-size: 12px;
+  color: #8fa1b9;
+  line-height: 1.6;
+}
+.capture-note {
+  margin: 0 0 16px;
+}
+.log-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(350px, 0.85fr);
+  gap: 18px;
+}
+.log-list,
+.log-detail {
+  background: #151c26;
+  border: 1px solid #2a3749;
+  border-radius: 9px;
+  min-width: 0;
+}
+#records {
+  overflow-y: auto;
+  height: 60vh;
+  min-height: 300px;
+}
+.log-record {
+  display: block;
+  text-align: left;
+  width: 100%;
+  background: transparent;
+  color: #c9d4e5;
+  border: 0;
+  border-bottom: 1px solid #293445;
+  padding: 12px 15px;
+  cursor: pointer;
+  border-radius: 0;
+}
+.log-record:hover,
+.log-record.selected {
+  background: #24344c;
+}
+.log-record .record-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: #90a5c0;
+  margin-bottom: 5px;
+}
+.record-meta .failure {
+  color: #ff9f94;
+}
+.record-meta .success {
+  color: #84d5ad;
+}
+.record-url {
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.record-message {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.log-pagination {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px;
+  border-top: 1px solid #293445;
+}
+#count {
+  margin-right: auto;
+  color: #91a5c0;
+  font-size: 11px;
+}
+.log-detail {
+  padding: 18px;
+}
+.log-detail h2 {
+  font-size: 14px;
+  margin: 0 0 15px;
+}
+#original {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font:
+    12px/1.65 Consolas,
+    monospace;
+  max-height: 62vh;
+  overflow-y: auto;
+  color: #d3ddeb;
+  margin: 0;
+}
+.log-footer {
+  margin-top: 15px;
+}
+#log-error {
+  color: #ffb0a6;
+  margin-bottom: 15px;
+  font-size: 13px;
+}
+.log-record .record-file {
+  color: #8eabc8;
+  font-size: 11px;
+  margin-top: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 1000px) {
+  .log-workspace {
+    grid-template-columns: 1fr;
+  }
+  .diagnostics-page {
+    padding: 20px;
+  }
+  .log-header {
+    flex-wrap: wrap;
+  }
+  #records {
+    height: 42vh;
+  }
+}

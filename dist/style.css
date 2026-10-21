@@ -838,3 +838,43 @@ dd {
   font-size: 12px;
   margin: 16px 0 0;
 }
+.nav {
+  text-decoration: none;
+}
+.path-picker {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.path-picker input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
+.field {
+  margin-bottom: 7px;
+}
+.tls-warning {
+  color: #f2b9a4;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  margin: 0 0 18px;
+}
+.tls-warning[hidden] {
+  display: none;
+}
+.activity-heading a {
+  font-size: 11px;
+  color: #a2beff;
+  text-decoration: none;
+}
+.event.error .event-msg {
+  color: #ffaaa0;
+}
+.event.warning .event-msg {
+  color: #e6c378;
+}

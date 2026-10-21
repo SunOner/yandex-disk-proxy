@@ -96,6 +96,26 @@ function sessionView(s) {
     phase === "cleanup_required" ? "↺ Восстановить" : "▶ Включить прокси";
   $("stop").disabled = !(active || phase === "starting");
   if (document.activeElement !== $("mode")) $("mode").value = s.mode;
+  const missing =
+    active && s.session.ca_trusted === false && s.tls?.client?.ok !== true;
+  const clientError = active && s.tls?.client?.ok === false;
+  const upstreamError = active && s.tls?.upstream?.ok === false;
+  const problem =
+    missing ||
+    clientError ||
+    upstreamError ||
+    s.log_error ||
+    s.session.error_detail;
+  $("tls-warning").hidden = !problem;
+  $("tls-message").textContent = missing
+    ? "Сертификат больше не находится в доверенных Windows."
+    : clientError
+      ? "Диск отклонил TLS-соединение. Причина — в журнале."
+      : upstreamError
+        ? "Ошибка TLS между прокси и Яндексом. Причина — в журнале."
+        : s.log_error || s.session.error_detail || "";
+  $("repair-ca").hidden = !missing;
+  $("restart-client").hidden = !clientError || missing;
 }
 function showDetails(row) {
   $("detail-name").textContent = row.name;
@@ -238,6 +258,8 @@ function renderEvents(events) {
       node("div", "event-msg", item.message),
     );
     if (item.file) row.append(node("div", "event-file", item.file));
+    row.classList.add(item.level || "info");
+    row.title = [item.reason, item.detail].filter(Boolean).join("\n");
     target.append(row);
   }
 }
@@ -327,13 +349,13 @@ function setFilter(value) {
       ? "Скачанные после начала наблюдения"
       : "Файлы с отметкой «Хранить на компьютере»";
   document
-    .querySelectorAll(".nav")
+    .querySelectorAll(".nav[data-filter]")
     .forEach((e) => e.classList.toggle("active", e.dataset.filter === value));
   refresh();
 }
 $("filter").addEventListener("change", (e) => setFilter(e.target.value));
 document
-  .querySelectorAll(".nav")
+  .querySelectorAll(".nav[data-filter]")
   .forEach((e) =>
     e.addEventListener("click", () => setFilter(e.dataset.filter)),
   );
@@ -371,6 +393,44 @@ function openSetup() {
     options.append(option);
   }
   $("setup-dialog").showModal();
+}
+for (const [button, input, kind] of [
+  ["browse-root", "setup-root", "folder"],
+  ["browse-client", "setup-client", "client"],
+]) {
+  $(button).addEventListener("click", async () => {
+    const controls = ["browse-root", "browse-client", "setup-cancel"];
+    controls.forEach((id) => ($(id).disabled = true));
+    $(button).textContent = "Выберите в Windows…";
+    try {
+      const result = await action("/api/browse", {
+        kind,
+        initial: $(input).value,
+      });
+      if (result.path) $(input).value = result.path;
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      controls.forEach((id) => ($(id).disabled = false));
+      $(button).textContent = "Обзор…";
+    }
+  });
+}
+for (const [id, path] of [
+  ["repair-ca", "/api/repair-ca"],
+  ["restart-client", "/api/restart-client"],
+]) {
+  $(id).addEventListener("click", async () => {
+    $(id).disabled = true;
+    try {
+      await action(path);
+      toast("Команда отправлена. Результат появится в журнале.");
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      $(id).disabled = false;
+    }
+  });
 }
 $("settings").addEventListener("click", openSetup);
 $("setup-cancel").addEventListener("click", () => $("setup-dialog").close());

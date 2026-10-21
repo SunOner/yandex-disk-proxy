@@ -15,6 +15,7 @@ from pathlib import Path
 
 import runtime
 import settings
+from diagnostics import redact_text, retry_io
 from winops import (
     APP,
     BASE_PY,
@@ -68,14 +69,17 @@ def main():
     proxy = None
     client = None
     parent_handle = k.OpenProcess(0x100000, False, parent)
-    outbox = queue.Queue()
+    outbox = queue.Queue(maxsize=1000)
 
     def record(**changes):
         state.update(changes)
         atomic(state_path, state)
 
     def event(kind, **fields):
-        outbox.put({"event": kind, **fields})
+        try:
+            outbox.put_nowait({"event": kind, **fields})
+        except queue.Full:
+            pass
 
     def send_events():
         while True:
@@ -102,6 +106,45 @@ def main():
         atomic(ledger_path, ledger)
         event("restored", file=rel)
 
+    def start_proxy():
+        ready_path = session_dir / "proxy-ready"
+        ready_path.unlink(missing_ok=True)
+        engine_process = subprocess.Popen(
+            cmd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            creationflags=NO_WINDOW,
+        )
+
+        def drain():
+            for line in iter(engine_process.stdout.readline, b""):
+                message = redact_text(line.decode("utf-8", errors="replace").strip())
+                if message:
+                    event("proxy_log", message=message[:2000])
+
+        threading.Thread(target=drain, daemon=True).start()
+        record(
+            proxy_launcher_pid=engine_process.pid,
+            proxy_launcher_created=created_ticks(engine_process.pid),
+        )
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if engine_process.poll() is not None:
+                raise RuntimeError("Proxy failed to start; exit=" + str(engine_process.returncode))
+            if ready_path.exists():
+                ready = json.loads(ready_path.read_text(encoding="ascii"))
+                engine = ready["pid"]
+                image = process_image(engine)
+                if image not in (BASE_PY, PROXY_PY):
+                    raise RuntimeError("Unexpected proxy executable identity")
+                record(
+                    proxy_pid=engine, proxy_created=created_ticks(engine), proxy_image=str(image)
+                )
+                return engine_process
+            time.sleep(0.1)
+        raise RuntimeError("Proxy startup timed out")
+
     try:
         if not parent_handle:
             raise RuntimeError("Panel process is unavailable")
@@ -116,7 +159,7 @@ def main():
             raise RuntimeError("Approved CA is already trusted by another session")
         record(ca_owned=True, stage="certificate")
         add_ca()
-        event("ca_added")
+        event("ca_added", trusted=ca_present())
         record(stage="proxy")
         env = os.environ.copy()
         env["YDM_SESSION_DIR"] = str(session_dir)
@@ -141,42 +184,7 @@ def main():
             "-s",
             str(APP / "addon.py"),
         )
-        proxy = subprocess.Popen(
-            cmd,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            creationflags=NO_WINDOW,
-        )
-
-        def drain():
-            for _ in iter(proxy.stdout.readline, b""):
-                pass
-
-        threading.Thread(target=drain, daemon=True).start()
-        record(
-            proxy_launcher_pid=proxy.pid,
-            proxy_launcher_created=created_ticks(proxy.pid),
-        )
-        deadline = time.monotonic() + 15
-        while time.monotonic() < deadline:
-            if proxy.poll() is not None:
-                raise RuntimeError("Proxy failed to start")
-            if (session_dir / "proxy-ready").exists():
-                ready = json.loads((session_dir / "proxy-ready").read_text(encoding="ascii"))
-                engine = ready["pid"]
-                image = process_image(engine)
-                if image not in (BASE_PY, PROXY_PY):
-                    raise RuntimeError("Unexpected proxy executable identity")
-                record(
-                    proxy_pid=engine,
-                    proxy_created=created_ticks(engine),
-                    proxy_image=str(image),
-                )
-                break
-            time.sleep(0.1)
-        else:
-            raise RuntimeError("Proxy startup timed out")
+        proxy = start_proxy()
         record(client_changed=True, stage="client")
         for pid in client_pids():
             stop_exact(pid, CLIENT)
@@ -186,18 +194,71 @@ def main():
             client_pid=client.pid,
             client_created=created_ticks(client.pid),
             phase="active",
+            ca_trusted=ca_present(),
         )
         event("session_active")
         last_sequence = 0
         last_ping = time.monotonic()
+        last_trust = 0
+        last_io_warning = -30
+        cached_control = {}
+        handled_actions = {"repair_ca": 0, "restart_client": 0}
+        restarts = []
         while True:
             if k.WaitForSingleObject(parent_handle, 0) != 258:
                 break
             if proxy.poll() is not None:
-                raise RuntimeError("Proxy stopped unexpectedly")
-            control = json.loads(control_path.read_text(encoding="utf-8"))
+                restarts = [at for at in restarts if time.monotonic() - at < 300]
+                if len(restarts) >= 3:
+                    raise RuntimeError("Proxy stopped repeatedly; exit=" + str(proxy.returncode))
+                restarts.append(time.monotonic())
+                event("proxy_restart", reason="exit=" + str(proxy.returncode))
+                proxy = start_proxy()
+            try:
+                control = retry_io(lambda: json.loads(control_path.read_text(encoding="utf-8")))
+                cached_control = control
+            except (OSError, ValueError) as exc:
+                control = cached_control
+                if time.monotonic() - last_io_warning >= 30:
+                    event("io_retry", reason=type(exc).__name__)
+                    last_io_warning = time.monotonic()
             if control.get("stop"):
                 break
+            for action in handled_actions:
+                requested = control.get(action, 0)
+                if requested <= handled_actions[action]:
+                    continue
+                handled_actions[action] = requested
+                try:
+                    if action == "repair_ca":
+                        if (
+                            settings.read().get("consented_thumbprint") != THUMB
+                            or not state["ca_owned"]
+                        ):
+                            raise ValueError("Certificate was not approved for this session")
+                        if not ca_present():
+                            add_ca()
+                        trusted = ca_present()
+                        record(ca_trusted=trusted)
+                        if trusted:
+                            event("ca_restored")
+                        else:
+                            event(
+                                "ca_check_error",
+                                reason="Windows did not confirm the certificate import",
+                            )
+                    else:
+                        if not ca_present():
+                            raise ValueError(
+                                "Restore certificate trust before restarting the client"
+                            )
+                        for pid in client_pids():
+                            stop_exact(pid, CLIENT)
+                        client = launch_client(True)
+                        record(client_pid=client.pid, client_created=created_ticks(client.pid))
+                        event("client_restarted")
+                except Exception as exc:
+                    event("proxy_log", message=redact_text(str(exc)))
             for command in control.get("commands", []):
                 if command["seq"] <= last_sequence:
                     continue
@@ -221,14 +282,34 @@ def main():
                         "pin_error", file=rel, action=command["action"], reason=type(exc).__name__
                     )
             if time.monotonic() - last_ping >= 2:
-                record(deferred_count=len(ledger))
+                try:
+                    record(deferred_count=len(ledger), command_sequence=last_sequence)
+                except OSError as exc:
+                    if time.monotonic() - last_io_warning >= 30:
+                        event("io_retry", reason=type(exc).__name__)
+                        last_io_warning = time.monotonic()
                 last_ping = time.monotonic()
+            if time.monotonic() - last_trust >= 15:
+                try:
+                    trusted = ca_present()
+                    if state.get("ca_trusted") != trusted:
+                        event("ca_restored" if trusted else "ca_missing")
+                    record(ca_trusted=trusted, ca_checked_at=time.time())
+                except OSError as exc:
+                    event("ca_check_error", reason=type(exc).__name__)
+                last_trust = time.monotonic()
             time.sleep(0.25)
     except Exception as exc:
-        record(error_type=type(exc).__name__, error_detail=str(exc)[:300])
-        event("session_error", reason=type(exc).__name__)
+        try:
+            record(error_type=type(exc).__name__, error_detail=redact_text(str(exc))[:300])
+        except OSError:
+            pass
+        event("session_error", reason=type(exc).__name__, detail=redact_text(str(exc)))
     finally:
-        record(phase="stopping")
+        try:
+            record(phase="stopping")
+        except OSError:
+            pass
         final = recover_session(session_dir)
         event(
             "session_stopped",

@@ -6,11 +6,13 @@ import re
 import ssl
 import subprocess
 import sys
+import tempfile
 from ctypes import wintypes as W
 from pathlib import Path
 
 import runtime
 import settings
+from diagnostics import retry_io
 
 APP = settings.APP
 WORK = settings.LOCAL
@@ -82,9 +84,15 @@ class Info(C.Structure):
 def atomic(path, value):
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(p.suffix + ".tmp")
-    tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(p)
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=p.parent, prefix=p.name + ".", suffix=".tmp", delete=False
+    ) as stream:
+        tmp = Path(stream.name)
+        json.dump(value, stream, ensure_ascii=False, indent=2)
+    try:
+        retry_io(lambda: tmp.replace(p))
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def safe_path(rel):
@@ -235,16 +243,40 @@ def ca_present(thumb=None):
     thumb = thumb or THUMB
     if not re.fullmatch("[0-9A-F]{40}", thumb):
         raise ValueError("Некорректный отпечаток сертификата")
-    command = (
-        "if(Test-Path -LiteralPath 'Cert:\\CurrentUser\\Root\\" + thumb + "'){exit 0}else{exit 1}"
+    # Query the same user's actual certificate store, without PowerShell provider caches.
+    crypt = C.WinDLL("crypt32", use_last_error=True)
+    crypt.CertOpenStore.argtypes = [C.c_void_p, W.DWORD, C.c_void_p, W.DWORD, C.c_void_p]
+    crypt.CertOpenStore.restype = C.c_void_p
+    crypt.CertFindCertificateInStore.argtypes = [
+        C.c_void_p,
+        W.DWORD,
+        W.DWORD,
+        W.DWORD,
+        C.c_void_p,
+        C.c_void_p,
+    ]
+    crypt.CertFindCertificateInStore.restype = C.c_void_p
+    crypt.CertFreeCertificateContext.argtypes = [C.c_void_p]
+    crypt.CertCloseStore.argtypes = [C.c_void_p, W.DWORD]
+
+    class HashBlob(C.Structure):
+        _fields_ = [("size", W.DWORD), ("data", C.POINTER(C.c_ubyte))]
+
+    store = crypt.CertOpenStore(
+        10, 0, None, 0x10000 | 0x4000 | 0x8000, C.cast(C.c_wchar_p("ROOT"), C.c_void_p)
     )
-    r = runtime.external_run(
-        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],
-        capture_output=True,
-        timeout=15,
-        creationflags=NO_WINDOW,
-    )
-    return r.returncode == 0
+    if not store:
+        raise C.WinError(C.get_last_error())
+    try:
+        digest = (C.c_ubyte * 20).from_buffer_copy(bytes.fromhex(thumb))
+        blob = HashBlob(20, digest)
+        found = crypt.CertFindCertificateInStore(store, 0x10001, 0, 0x10000, C.byref(blob), None)
+        if found:
+            crypt.CertFreeCertificateContext(found)
+            return True
+        return False
+    finally:
+        crypt.CertCloseStore(store, 0)
 
 
 def add_ca():

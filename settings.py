@@ -5,8 +5,11 @@ import json
 import os
 import ssl
 import sys
+import tempfile
+import threading
 from pathlib import Path
 
+from diagnostics import retry_io
 from runtime import FROZEN, INSTALL, RESOURCES
 
 APP = RESOURCES
@@ -16,6 +19,7 @@ LOCAL = Path(
 ).resolve()
 LOCAL.mkdir(parents=True, exist_ok=True)
 CONFIG = LOCAL / "config.json"
+_config_lock = threading.RLock()
 PYTHON = Path(sys.executable).resolve()
 PANEL_PORT = int(os.environ.get("YDP_PANEL_PORT", "18765"))
 PROXY_PORT = int(os.environ.get("YDP_PROXY_PORT", "18080"))
@@ -86,15 +90,23 @@ def save(root, client):
 
 
 def write(value):
-    tmp = CONFIG.with_suffix(".tmp")
-    tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(CONFIG)
+    with _config_lock:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=LOCAL, prefix="config.", suffix=".tmp", delete=False
+        ) as stream:
+            tmp = Path(stream.name)
+            json.dump(value, stream, ensure_ascii=False, indent=2)
+        try:
+            retry_io(lambda: tmp.replace(CONFIG))
+        finally:
+            tmp.unlink(missing_ok=True)
 
 
 def preference(**values):
-    value = read()
-    value.update(values)
-    write(value)
+    with _config_lock:
+        value = read()
+        value.update(values)
+        write(value)
 
 
 def ensure_certificate():

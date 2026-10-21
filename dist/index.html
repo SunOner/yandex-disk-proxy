@@ -26,6 +26,9 @@
       ><button class="nav" data-filter="all">
         <span>▦</span> Все отмеченные
       </button>
+      <a class="nav" href="/requests" target="_blank" rel="noopener"
+        ><span>≡</span> Запросы и журнал ↗</a
+      >
     </aside>
     <main>
       <section class="session-bar">
@@ -47,6 +50,15 @@
           ><button id="settings" class="button">Настройка</button>
         </div>
       </section>
+      <div id="tls-warning" class="tls-warning" hidden>
+        <span id="tls-message"></span>
+        <button id="repair-ca" class="button" hidden>
+          Восстановить доверие
+        </button>
+        <button id="restart-client" class="button" hidden>
+          Перезапустить Диск
+        </button>
+      </div>
       <section class="metrics">
         <article>
           <span>ОСТАЛОСЬ СКАЧАТЬ</span><strong id="metric-pending">—</strong
@@ -135,7 +147,9 @@
         <aside class="activity-panel">
           <div class="activity-heading">
             <h2>Журнал</h2>
-            <span class="live-dot"></span>
+            <a href="/requests#events" target="_blank" rel="noopener"
+              >Открыть ↗</a
+            >
           </div>
           <div id="events" class="events"></div>
         </aside>
@@ -163,20 +177,26 @@
         <div class="eyebrow">ПОДКЛЮЧЕНИЕ ПРИЛОЖЕНИЯ</div>
         <h2>Настройка Яндекс Диска</h2>
         <p class="dialog-intro">Укажите папку синхронизации и приложение.</p>
-        <label class="field"
-          >Папка синхронизации<input
+        <label class="field" for="setup-root">Папка синхронизации</label>
+        <div class="path-picker">
+          <input
             id="setup-root"
             list="root-options"
             required
-            placeholder="Путь к папке Яндекс Диска" /><datalist
-            id="root-options"
-          ></datalist></label
-        ><label class="field"
-          >Приложение Яндекс Диск<input
+            placeholder="Путь к папке Яндекс Диска"
+          /><datalist id="root-options"></datalist
+          ><button type="button" id="browse-root" class="button">Обзор…</button>
+        </div>
+        <label class="field" for="setup-client">Приложение Яндекс Диск</label>
+        <div class="path-picker">
+          <input
             id="setup-client"
             required
             placeholder="Полный путь к YandexDisk4.exe"
-        /></label>
+          /><button type="button" id="browse-client" class="button">
+            Обзор…
+          </button>
+        </div>
         <p class="detail-note">
           Скачиваются только файлы с отметкой «Хранить на компьютере».
         </p>

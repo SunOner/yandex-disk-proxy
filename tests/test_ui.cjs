@@ -58,6 +58,11 @@ async function main() {
   assert.equal(element('session-title').textContent,'Прокси включён');
   assert.equal(element('stop').disabled,false);
   assert.equal(element('mode').disabled,false);
+  vm.runInContext("sessionView({session:{phase:'active',ca_trusted:false},tls:{client:{ok:true},upstream:{ok:true}},mode:'defer'})",context);
+  assert.equal(element('tls-warning').hidden,true,'A verified client TLS connection must not be shown as disconnected');
+  vm.runInContext("sessionView({session:{phase:'active',ca_trusted:false},tls:{client:{ok:false}},mode:'defer'})",context);
+  assert.equal(element('tls-warning').hidden,false);
+  assert.equal(element('repair-ca').hidden,false);
   console.log('UI: stale results rejected; offline controls disabled; reconnect recovered; removed elements unused.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

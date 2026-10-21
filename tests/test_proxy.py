@@ -16,6 +16,7 @@ from mitmproxy import connection, http
 import addon
 import server
 import winops
+from diagnostics import redacted
 
 
 def flow(url, method="GET", status=200, body=b""):
@@ -78,7 +79,12 @@ class Tracking(unittest.TestCase):
         s = flow(d.response.headers["location"])
         self.t.request(s)
         self.assertEqual(s.metadata["ydm_file"], "test/a.bin")
-        data = json.dumps(list(self.t.outbox.queue))
+        data = json.dumps(
+            [
+                redacted(item["record"]) if item["event"] == "traffic" else item
+                for item in self.t.outbox.queue
+            ]
+        )
         for value in (
             "SIGNED_SECRET",
             "OTHER_SECRET",
@@ -98,7 +104,7 @@ class Tracking(unittest.TestCase):
         self.t.responseheaders(f)
         self.assertNotIn("ydm_synthetic", f.metadata)
         self.assertEqual(f.response.status_code, 500)
-        self.assertTrue(self.t.outbox.empty())
+        self.assertTrue(all(item["event"] == "traffic" for item in self.t.outbox.queue))
 
     def test_compressed_api_response_preserves_mapping(self):
         href = "https://downloader.disk.yandex.ru/disk/private?token=SECRET"

@@ -20,7 +20,9 @@ from pathlib import Path
 
 import runtime
 import settings
+import windows_ui
 import winops
+from diagnostics import JsonLog, Traffic, redact_text
 from downloads import History
 from winops import (
     APP,
@@ -61,6 +63,11 @@ class Model:
         self.lock = threading.RLock()
         self.files = {}
         self.events = collections.deque(maxlen=400)
+        self.event_log = JsonLog(RUNTIME / "events.jsonl")
+        self.events.extendleft(self.event_log.tail())
+        self.traffic = Traffic(RUNTIME / "requests.jsonl")
+        self.tls = {}
+        self.log_error = None
         self.sequence = 0
         self.mode = settings.read().get("mode", "defer")
         self.threshold = 1
@@ -133,30 +140,41 @@ class Model:
             self.downloads.save()
         self.log("inventory", f"Список готов: {len(rows)} файлов отмечены для хранения на ПК")
 
-    def log(self, kind, message, file=None):
+    def log(self, kind, message, file=None, **details):
+        with self.lock:
+            self._log(kind, message, file, **details)
+
+    def _log(self, kind, message, file=None, **details):
         row = {
             "id": uuid.uuid4().hex[:12],
             "time": stamp(),
             "event": kind,
             "message": message,
+            "timestamp": time.time(),
+            "level": "error"
+            if kind in ("session_error", "tls_error", "ca_missing", "action_error")
+            else "warning"
+            if kind
+            in (
+                "pin_error",
+                "network_error",
+                "io_retry",
+                "proxy_restart",
+                "ca_check_error",
+                "diagnostic_dropped",
+                "proxy_log",
+            )
+            else "info",
         }
+        row.update({key: redact_text(value) for key, value in details.items()})
         if file:
             row["file"] = file
         self.events.appendleft(row)
-        with (RUNTIME / "events.jsonl").open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps(row, ensure_ascii=False) + "\n")
-        if kind in (
-            "http500",
-            "deferred",
-            "session_active",
-            "session_stopped",
-            "session_error",
-            "pin_error",
-        ):
-            print(
-                f"[{row['time']}] {message}" + (" | " + file if file else ""),
-                flush=True,
-            )
+        try:
+            self.event_log.append(row)
+            self.log_error = None
+        except OSError as exc:
+            self.log_error = "Не удалось записать журнал: " + type(exc).__name__
 
     def session(self):
         if not self.directory:
@@ -168,7 +186,20 @@ class Model:
 
     def save_control(self):
         if self.directory:
+            acknowledged = self.session().get("command_sequence", 0)
+            self.control["commands"] = [
+                c for c in self.control.get("commands", []) if c["seq"] > acknowledged
+            ]
             atomic(self.directory / "control.json", self.control)
+
+    def worker_action(self, action):
+        if action not in ("repair_ca", "restart_client"):
+            raise ValueError("Неизвестное действие")
+        with self.lock:
+            if self.session().get("phase") != "active":
+                raise ValueError("Прокси выключен")
+            self.control[action] = self.control.get(action, 0) + 1
+            self.save_control()
 
     def start(self):
         with self.lock:
@@ -260,6 +291,12 @@ class Model:
     def event(self, event):
         with self.lock:
             kind = event.get("event")
+            if kind == "traffic":
+                try:
+                    self.traffic.add(event.get("record"))
+                except OSError as exc:
+                    self.log_error = "Не удалось записать запросы: " + type(exc).__name__
+                return
             rel = event.get("file")
             row = self.files.get(rel)
             if rel and row is None:
@@ -267,11 +304,52 @@ class Model:
                 return
             if kind == "api_health":
                 self.counters["api_success"] += 1
-            elif kind == "tls_error":
-                self.counters["tls_errors"] += 1
+            elif kind in ("tls_error", "tls_ok"):
+                side = event.get("side", "client")
+                if side not in ("client", "upstream"):
+                    return
+                self.tls[side] = {
+                    "ok": kind == "tls_ok",
+                    "at": time.time(),
+                    "host": event.get("host", ""),
+                    "error": redact_text(event.get("reason", "")),
+                }
+                if kind == "tls_error":
+                    self.counters["tls_errors"] += 1
+                    self.log(
+                        "tls_error",
+                        "Ошибка TLS: "
+                        + ("Диск → прокси" if side == "client" else "прокси → Яндекс"),
+                        side=side,
+                        host=event.get("host", ""),
+                        reason=event.get("reason", ""),
+                    )
+            elif kind in (
+                "ca_missing",
+                "ca_restored",
+                "ca_check_error",
+                "proxy_restart",
+                "client_restarted",
+                "io_retry",
+                "diagnostic_dropped",
+                "proxy_log",
+            ):
+                messages = {
+                    "ca_missing": "Сертификат удалён из доверенных. Восстановите доверие в панели",
+                    "ca_restored": "Доверие сертификату восстановлено",
+                    "ca_check_error": "Не удалось проверить доверие сертификату",
+                    "proxy_restart": "Прокси завершился. Повторный запуск",
+                    "client_restarted": "Диск перезапущен через прокси",
+                    "io_retry": "Служебный файл временно недоступен. Повторяем операцию",
+                    "diagnostic_dropped": "Часть событий пропущена: очередь диагностики заполнена",
+                    "proxy_log": "Сообщение прокси",
+                }
                 self.log(
-                    "tls_error",
-                    "TLS-соединение отклонено: проверьте доверие сертификату",
+                    kind,
+                    messages[kind],
+                    reason=event.get("reason", ""),
+                    detail=event.get("message", ""),
+                    count=event.get("count", ""),
                 )
             elif kind == "attempt":
                 row["attempts"] += 1
@@ -363,6 +441,7 @@ class Model:
             elif kind == "network_error":
                 reason = event.get("reason", "connection")
                 self.counters[reason] += 1
+                self.log("network_error", "Сетевая ошибка: " + reason, rel)
                 if reason != "client_cancelled" and row["status"] not in (
                     "local",
                     "deferred",
@@ -380,7 +459,9 @@ class Model:
                 "client_direct",
             ):
                 messages = {
-                    "ca_added": "Временный сертификат добавлен для текущего пользователя",
+                    "ca_added": "Сертификат установлен в Windows"
+                    if event.get("trusted")
+                    else "Сертификат передан Диску; в хранилище Windows не обнаружен",
                     "proxy_ready": "Прокси слушает только 127.0.0.1:18080",
                     "session_active": "Диск запущен через прокси",
                     "session_error": "Ошибка сеанса; выполняется восстановление",
@@ -392,7 +473,12 @@ class Model:
                         "ca_removed": bool(event.get("ca_removed")),
                         "restore_failures": event.get("restore_failures", 0),
                     }
-                self.log(kind, messages[kind])
+                self.log(
+                    kind,
+                    messages[kind],
+                    reason=event.get("reason", ""),
+                    detail=event.get("detail", ""),
+                )
 
     def policy(self):
         with self.lock:
@@ -440,7 +526,9 @@ class Model:
                                 row["cooldown_until"] = 0
                         self.log(
                             "session_stopped",
-                            "Сеанс завершён",
+                            "Сеанс завершён"
+                            + (": " + current["error_type"] if current.get("error_type") else ""),
+                            reason=current.get("error_detail", ""),
                         )
             except (OSError, ValueError):
                 pass
@@ -507,6 +595,8 @@ class Model:
                 "events": list(self.events)[:30],
                 "cleanup": self.latest_cleanup,
                 "certificate_thumbprint": THUMB,
+                "tls": self.tls,
+                "log_error": self.log_error,
             }
 
     def selected_files(self, query):
@@ -624,10 +714,30 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/files":
             self.reply(200, ACTIVE.selected_files(urllib.parse.parse_qs(u.query)))
             return
+        if u.path == "/api/requests":
+            query = urllib.parse.parse_qs(u.query)
+            try:
+                offset = max(0, int(query.get("offset", ["0"])[0]))
+            except ValueError:
+                offset = 0
+            self.reply(
+                200,
+                ACTIVE.traffic.select(
+                    query.get("q", [""])[0], query.get("errors", [""])[0] == "1", offset
+                ),
+            )
+            return
+        if u.path == "/api/events":
+            with ACTIVE.lock:
+                self.reply(200, {"rows": list(ACTIVE.events), "error": ACTIVE.log_error})
+            return
         static = {
             "/": ("index.html", "text/html; charset=utf-8"),
             "/app.js": ("app.js", "text/javascript; charset=utf-8"),
             "/style.css": ("style.css", "text/css; charset=utf-8"),
+            "/requests": ("requests.html", "text/html; charset=utf-8"),
+            "/requests.js": ("requests.js", "text/javascript; charset=utf-8"),
+            "/requests.css": ("requests.css", "text/css; charset=utf-8"),
         }
         if u.path in static:
             name, kind = static[u.path]
@@ -677,6 +787,19 @@ class Handler(BaseHTTPRequestHandler):
                     ACTIVE.files = {}
                     ACTIVE.downloads = History(history_path())
                     ACTIVE.refresh_inventory()
+            elif self.path == "/api/browse":
+                if ACTIVE.session().get("phase") not in ("idle", "stopped"):
+                    raise ValueError("Сначала остановите прокси")
+                selected = windows_ui.choose(data.get("kind"), data.get("initial", ""))
+                self.reply(200, {"path": selected})
+                return
+            elif self.path == "/api/request-detail":
+                self.reply(200, ACTIVE.traffic.detail(data.get("id"), data.get("reveal") is True))
+                return
+            elif self.path in ("/api/repair-ca", "/api/restart-client"):
+                ACTIVE.worker_action(
+                    "repair_ca" if self.path.endswith("repair-ca") else "restart_client"
+                )
             elif self.path == "/api/stop":
                 ACTIVE.stop()
             elif self.path == "/api/recover":
@@ -701,6 +824,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.reply(200, {"ok": True})
         except (ValueError, TypeError, OSError) as exc:
+            ACTIVE.log("action_error", "Действие не выполнено: " + self.path, reason=str(exc))
             self.reply(400, {"error": str(exc)[:180]})
 
 
