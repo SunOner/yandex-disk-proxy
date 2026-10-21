@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0
+
+- Added file previews for supported images, videos and PDFs.
+- Replaced start/stop buttons with a proxy switch and reused the approved certificate on subsequent starts.
+- Added a separate remaining-size counter and simplified the main counters and fullscreen dashboard.
+- Expanded the logs panel to fill its card and fixed the flickering Show more button.
+- Added the project icon to browser tabs, the Windows executable and console window.
+- Windows builds now use the fixed path `release/YandexDiskProxy.exe` for VPN split tunneling.
+- Shortened the user guides and explained why the project was created.
+
 ## 0.7.0
 
 - Added a Monitoring page with six interactive time charts, eight ranges, English/Russian labels and live updates.
