@@ -41,6 +41,7 @@ function node() {
 }
 const host = node();
 const context = vm.createContext({
+  I18n: require("./i18n_stub.cjs")(),
   console,
   performance: { now: () => now },
   setTimeout(fn, delay) {

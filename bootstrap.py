@@ -10,15 +10,13 @@ from pathlib import Path
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     if os.name != "nt":
-        raise SystemExit("Поддерживается только Windows 10/11.")
+        raise SystemExit("Windows 10/11 is required.")
     if not (3, 12) <= sys.version_info[:2] < (3, 14):
-        raise SystemExit(
-            "Установите Python 3.12 или 3.13 с python.org и запустите Start.cmd ещё раз."
-        )
+        raise SystemExit("Install Python 3.12 or 3.13 from python.org and run Start.cmd again.")
     app = Path(__file__).resolve().parent
     python = app / ".venv/Scripts/python.exe"
     if not python.exists():
-        print("Создаётся отдельное окружение Python…", flush=True)
+        print("Creating a Python environment…", flush=True)
         venv.create(app / ".venv", with_pip=True)
     check = subprocess.run(
         [
@@ -31,7 +29,7 @@ def main():
     )
     if check.returncode or check.stdout.strip() != "12.2.3":
         print(
-            "Устанавливается mitmproxy из PyPI. Это требуется только при первой настройке…",
+            "Installing mitmproxy from PyPI for the initial setup…",
             flush=True,
         )
         subprocess.run(
@@ -58,5 +56,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except (OSError, subprocess.CalledProcessError) as exc:
-        print("Не удалось запустить проект: " + str(exc))
+        print("Startup failed: " + str(exc))
         sys.exit(1)

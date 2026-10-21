@@ -66,6 +66,7 @@ class PanelAccess(unittest.TestCase):
                     for route in (
                         "/requests",
                         "/requests.js",
+                        "/i18n.js",
                         "/list-motion.js",
                         "/toasts.js",
                         "/meters.js",

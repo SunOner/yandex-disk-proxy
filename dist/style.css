@@ -15,6 +15,9 @@
 * {
   box-sizing: border-box;
 }
+html[data-i18n-ready="false"] body {
+  visibility: hidden;
+}
 body {
   margin: 0;
   display: flex;
@@ -52,6 +55,7 @@ select:focus-visible {
   flex-direction: column;
   background: #101620;
   border-right: 1px solid #202a38;
+  overflow-y: auto;
 }
 .brand {
   display: flex;
@@ -68,10 +72,134 @@ select:focus-visible {
 }
 .brand-name {
   color: #edf2fa;
-  font-size: 25px;
+  font-size: 18px;
   font-weight: 700;
-  letter-spacing: -0.8px;
-  line-height: 1;
+  letter-spacing: -0.45px;
+  line-height: 1.2;
+}
+.brand-name span {
+  display: block;
+  white-space: nowrap;
+}
+.brand,
+.nav,
+.nav-title {
+  flex-shrink: 0;
+}
+.nav > .i18n-text {
+  width: auto;
+  flex: 1;
+  font-size: inherit;
+  text-align: left;
+}
+.locale-switcher {
+  position: relative;
+  flex-shrink: 0;
+  margin-top: auto;
+  padding-top: 15px;
+  border-top: 1px solid #263243;
+}
+.language-toggle,
+.language-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: #131d2b;
+  color: #dce6f5;
+  text-align: left;
+  font-size: 12px;
+}
+.language-toggle:hover,
+.language-option:hover {
+  background: #203047;
+  border-color: #354963;
+}
+.language-flag {
+  flex: 0 0 26px;
+  border-radius: 3px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px #ffffff15;
+}
+.language-chevron {
+  margin-left: auto;
+  color: #8ea0b8;
+}
+.language-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 250;
+  width: max(100%, 180px);
+  padding: 5px;
+  border: 1px solid #34445b;
+  border-radius: 11px;
+  background: #121b28;
+  box-shadow: 0 14px 40px #0007;
+}
+.language-menu[hidden] {
+  display: none;
+}
+.language-option {
+  background: transparent;
+}
+.language-check {
+  margin-left: auto;
+  visibility: hidden;
+  color: #83dcb2;
+}
+.language-option[aria-checked="true"] .language-check {
+  visibility: visible;
+}
+.locale-floating {
+  position: fixed;
+  bottom: 18px;
+  left: 18px;
+  z-index: 80;
+  width: 180px;
+  padding: 0;
+  border: 0;
+}
+.locale-floating .language-toggle {
+  border-color: #2b3b50;
+  box-shadow: 0 8px 25px #0005;
+}
+.board-language {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  width: 180px;
+}
+.board-footer {
+  align-items: center;
+}
+body.diagnostics-page {
+  padding-bottom: 90px;
+}
+.sidebar .language-menu {
+  position: fixed;
+  left: 16px;
+  bottom: 76px;
+  width: 198px;
+}
+@media (max-width: 760px) {
+  .sidebar .language-toggle {
+    justify-content: center;
+    padding: 9px 0;
+  }
+  .sidebar .language-name,
+  .sidebar .language-chevron,
+  .nav > .i18n-text {
+    display: none;
+  }
+}
+@media (max-width: 540px) {
+  .board-footer {
+    align-items: flex-start;
+  }
 }
 .nav-title {
   margin: 0 14px 15px;

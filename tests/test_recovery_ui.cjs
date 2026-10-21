@@ -38,6 +38,7 @@ const state = {
   },
 };
 const context = vm.createContext({
+  I18n: require("./i18n_stub.cjs")(),
   console,
   Intl,
   URLSearchParams,

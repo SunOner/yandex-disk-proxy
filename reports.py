@@ -103,10 +103,10 @@ def bundle(model):
         write(
             "README.txt",
             (
-                "Токены, cookies и подписанные URL скрыты. Тела запросов и файлов не записаны.\n"
-                "Архив содержит имена и пути файлов. Отправка архива куда-либо выполняется пользователем.\n"
-                "Сводные счётчики охватывают период с since; подробные записи ограничены ротацией.\n"
-                "Соединения вне списка расшифровки имеют только сетевые метаданные.\n"
+                "Tokens, cookies and signed URLs are masked. Request and file bodies are not recorded.\n"
+                "The archive contains file names and paths. Sharing it is up to the user.\n"
+                "Summary counters cover the period starting at since; detailed records are limited by rotation.\n"
+                "Connections outside the decryption list contain network metadata only.\n"
             ).encode("utf-8"),
         )
         archive.writestr("manifest.json", encode(manifest))

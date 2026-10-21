@@ -1,4 +1,13 @@
-# Изменения
+# Changelog
+
+## 0.6.0
+
+- Renamed the project, interface, executable metadata and repository to Yandex Disk Proxy.
+- English is now the default; Russian remains available through a flag menu at the bottom left.
+- Language changes apply immediately to all pages, open tabs, dialogs, notifications and the fullscreen dashboard.
+- Browser preferences retain the language and selected views and filters. Original-token visibility is never saved.
+- Localized number and date formatting, native picker captions, English startup messages and bilingual documentation.
+
 
 ## 0.5.7
 

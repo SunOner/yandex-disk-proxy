@@ -17,6 +17,9 @@ const document = {
 function element() {
   const classes = new Set();
   return {
+    tabIndex: 0,
+    closest() { return null; },
+    querySelectorAll() { return [get("close-board")]; },
     children: [],
     attributes: {},
     listeners: {},
@@ -84,6 +87,7 @@ board.hidden = true;
 document.body.children = [outside, originallyInert, board];
 document.activeElement = get("open-board");
 const context = vm.createContext({
+  I18n: require("./i18n_stub.cjs")(),
   document,
   console,
   matchMedia: () => ({ matches: reduced }),
@@ -277,6 +281,21 @@ async function main() {
   );
   assert.equal(board.hidden, true);
   await finishAnimations();
+  context.I18n.locale = 'en-GB';
+  context.I18n.decimal = '.';
+  const englishData = n => ({...data(n), pending:{text:n.toLocaleString('en-GB'),value:n,detail:'82 GB'},network:{text:'1.1 MB',value:1153434,detail:'Network'}});
+  dashboard.update(englishData(999), 'Proxy is on');
+  await finishAnimations();
+  const englishCarry = animations.length;
+  dashboard.update(englishData(1000), 'Proxy is on');
+  assert.equal(animations.length - englishCarry, 3, 'English grouping comma is not treated as a decimal separator');
+  assert.equal(reader('metric-pending'), '1,000');
+  await finishAnimations();
+  dashboard.setConnected(false);
+  dashboard.update(englishData(1000), 'Proxy is on', false);
+  dashboard.open();
+  assert.equal(get('board-status').textContent, 'Нет связи с панелью', 'Relocalizing cached metrics cannot reconnect the dashboard');
+  await dashboard.close();
   console.log(
     "Meters: carries, reverse/rapid updates, units, accessible values, reduced motion, offline state, focus, fullscreen, fallback and late requests passed.",
   );

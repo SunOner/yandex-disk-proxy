@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en" data-i18n-ready="false">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Диск — локальный прокси</title>
+    <title>Yandex Disk Proxy</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
@@ -38,86 +38,155 @@
             <path d="M35 25v11m-4-4 4 4 4-4" stroke-width="3.2" />
           </g>
         </svg>
-        <div class="brand-name">Диск</div>
+        <div class="brand-name"><span>Yandex</span><span>Disk Proxy</span></div>
       </div>
-      <div class="nav-title">ФАЙЛЫ</div>
+      <div class="nav-title" data-i18n="ФАЙЛЫ">FILES</div>
       <button class="nav active" data-filter="pending">
-        <span>▤</span> Очередь загрузки <b id="nav-count">—</b></button
+        <span>▤</span>
+        <span class="i18n-text" data-i18n="Очередь загрузки"
+          >Download queue</span
+        >
+        <b id="nav-count">—</b></button
       ><button class="nav" data-filter="errors">
-        <span>!</span> Ошибки 500</button
+        <span>!</span>
+        <span class="i18n-text" data-i18n="Ошибки 500"
+          >HTTP 500 errors</span
+        ></button
       ><button class="nav" data-filter="deferred">
-        <span>Ⅱ</span> Отложенные</button
+        <span>Ⅱ</span>
+        <span class="i18n-text" data-i18n="Отложенные">Deferred</span></button
       ><button class="nav" data-filter="downloaded">
-        <span>↓</span> Новые загрузки <b id="nav-downloaded">—</b></button
+        <span>↓</span>
+        <span class="i18n-text" data-i18n="Новые загрузки">New downloads</span>
+        <b id="nav-downloaded">—</b></button
       ><button class="nav" data-filter="local">
-        <span>✓</span> На компьютере</button
+        <span>✓</span>
+        <span class="i18n-text" data-i18n="На компьютере"
+          >On this PC</span
+        ></button
       ><button class="nav" data-filter="all">
-        <span>▦</span> Все отмеченные
+        <span>▦</span>
+        <span class="i18n-text" data-i18n="Все отмеченные">All selected</span>
       </button>
       <a class="nav" href="/requests" target="_blank" rel="noopener"
-        ><span>≡</span> Запросы и журнал ↗</a
+        ><span>≡</span>
+        <span class="i18n-text" data-i18n="Запросы и журнал ↗"
+          >Requests &amp; logs ↗</span
+        ></a
       >
       <a class="nav" href="/recovery" target="_blank" rel="noopener"
-        ><span>↓</span> Прямые загрузки ↗</a
+        ><span>↓</span>
+        <span class="i18n-text" data-i18n="Прямые загрузки ↗"
+          >Direct downloads ↗</span
+        ></a
       >
+      <div class="locale-switcher" data-language-picker></div>
     </aside>
     <main>
       <section class="session-bar">
         <div class="session-info">
           <span id="session-led" class="session-led"></span>
           <div>
-            <strong id="session-title">Прокси выключен</strong>
+            <strong id="session-title" data-i18n-once="Прокси выключен"
+              >Proxy is off</strong
+            >
           </div>
         </div>
         <div class="session-controls">
-          <label for="mode">При ошибке 500</label
+          <label for="mode" data-i18n="При ошибке 500">On HTTP 500</label
           ><select id="mode">
-            <option value="defer">Откладывать файлы</option>
-            <option value="cooldown">Ограничивать повторы</option>
-            <option value="observe">Наблюдать</option></select
-          ><button id="start" class="button primary">▶ Включить прокси</button
-          ><button id="stop" class="button stop" disabled>
-            ■ Остановить и восстановить</button
-          ><button id="rescan" class="button">Обновить список</button
-          ><button id="settings" class="button">Настройка</button>
+            <option value="defer" data-i18n="Откладывать файлы">
+              Defer files
+            </option>
+            <option value="cooldown" data-i18n="Ограничивать повторы">
+              Limit retries
+            </option>
+            <option value="observe" data-i18n="Наблюдать">
+              Observe
+            </option></select
+          ><button
+            id="start"
+            class="button primary"
+            data-i18n-once="▶ Включить прокси"
+          >
+            ▶ Start proxy</button
+          ><button
+            id="stop"
+            class="button stop"
+            disabled
+            data-i18n="■ Остановить и восстановить"
+          >
+            ■ Stop and restore</button
+          ><button id="rescan" class="button" data-i18n-once="Обновить список">
+            Refresh files</button
+          ><button id="settings" class="button" data-i18n="Настройка">
+            Settings
+          </button>
         </div>
       </section>
       <div id="tls-warning" class="tls-warning" hidden>
         <span id="tls-message"></span>
-        <button id="repair-ca" class="button" hidden>
-          Восстановить доверие
+        <button
+          id="repair-ca"
+          class="button"
+          hidden
+          data-i18n="Восстановить доверие"
+        >
+          Repair certificate
         </button>
-        <button id="restart-client" class="button" hidden>
-          Перезапустить Диск
+        <button
+          id="restart-client"
+          class="button"
+          hidden
+          data-i18n="Перезапустить Диск"
+        >
+          Restart Disk
         </button>
       </div>
       <section class="metrics">
         <article>
-          <span>ОСТАЛОСЬ СКАЧАТЬ</span><strong id="metric-pending">—</strong
-          ><small id="metric-size">Считывание списка</small>
+          <span data-i18n="ОСТАЛОСЬ СКАЧАТЬ">LEFT TO DOWNLOAD</span
+          ><strong id="metric-pending">—</strong
+          ><small id="metric-size" data-i18n-once="Считывание списка"
+            >Reading file list</small
+          >
         </article>
         <article>
-          <span>НОВЫЕ ЗАГРУЗКИ</span><strong id="metric-downloaded">—</strong
-          ><small id="metric-downloaded-size">Подтверждено Windows</small
-          ><small id="metric-local">Всего на ПК: —</small>
+          <span data-i18n="НОВЫЕ ЗАГРУЗКИ">NEW DOWNLOADS</span
+          ><strong id="metric-downloaded">—</strong
+          ><small
+            id="metric-downloaded-size"
+            data-i18n-once="Подтверждено Windows"
+            >Confirmed by Windows</small
+          ><small id="metric-local" data-i18n-once="Всего на ПК: —"
+            >Total on this PC: —</small
+          >
         </article>
         <article class="metric-error">
-          <span>ОТВЕТЫ 500</span><strong id="metric-errors">0</strong
-          ><small>ответы Яндекса за запуск панели</small>
+          <span data-i18n="ОТВЕТЫ 500">HTTP 500 RESPONSES</span
+          ><strong id="metric-errors">0</strong
+          ><small data-i18n="ответы Яндекса за запуск панели"
+            >Yandex responses during this panel session</small
+          >
         </article>
         <article class="metric-deferred">
-          <span>ОТЛОЖЕНО</span><strong id="metric-deferred">0</strong
-          ><small>временно снята отметка хранения</small>
+          <span data-i18n="ОТЛОЖЕНО">DEFERRED</span
+          ><strong id="metric-deferred">0</strong
+          ><small data-i18n="временно снята отметка хранения"
+            >offline selection temporarily removed</small
+          >
         </article>
         <article class="metric-network-card">
           <button
             id="open-board"
             class="metric-expand"
             type="button"
-            aria-label="Счётчики на весь экран"
+            aria-label="Fullscreen counters"
             aria-controls="metrics-board"
             aria-expanded="false"
-            title="Счётчики на весь экран"
+            title="Fullscreen counters"
+            data-i18n-title="Счётчики на весь экран"
+            data-i18n-aria-label="Счётчики на весь экран"
           >
             <svg
               viewBox="0 0 24 24"
@@ -132,17 +201,25 @@
               <path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4" />
             </svg>
           </button>
-          <span>ПЕРЕДАНО ПО СЕТИ</span><strong id="metric-network">0 Б</strong
-          ><small>учтённые потоки, включая повторы</small>
+          <span data-i18n="ПЕРЕДАНО ПО СЕТИ">NETWORK TRAFFIC</span
+          ><strong id="metric-network" data-i18n-once="0 Б">0 B</strong
+          ><small data-i18n="учтённые потоки, включая повторы"
+            >observed traffic, including retries</small
+          >
         </article>
       </section>
       <div class="workspace">
         <section class="file-panel">
           <div class="table-head">
             <div>
-              <h2 id="list-title">Очередь загрузки</h2>
-              <p id="list-description">
-                Только файлы, отмеченные для хранения на ПК
+              <h2 id="list-title" data-i18n-once="Очередь загрузки">
+                Download queue
+              </h2>
+              <p
+                id="list-description"
+                data-i18n-once="Только файлы, отмеченные для хранения на ПК"
+              >
+                Only files selected to keep on this PC
               </p>
             </div>
             <div class="table-tools">
@@ -151,15 +228,31 @@
                 ><input
                   id="search"
                   type="search"
-                  placeholder="Имя файла или часть пути"
-                  aria-label="Найти файл" /></label
-              ><select id="filter" aria-label="Фильтр файлов">
-                <option value="pending">Не скачаны</option>
-                <option value="errors">Были ошибки 500</option>
-                <option value="deferred">Отложенные</option>
-                <option value="downloaded">Новые загрузки</option>
-                <option value="local">На ПК</option>
-                <option value="all">Все отмеченные</option>
+                  placeholder="File name or part of a path"
+                  aria-label="Find a file"
+                  data-i18n-placeholder="Имя файла или часть пути"
+                  data-i18n-aria-label="Найти файл" /></label
+              ><select
+                id="filter"
+                aria-label="File filter"
+                data-i18n-aria-label="Фильтр файлов"
+              >
+                <option value="pending" data-i18n="Не скачаны">
+                  Not downloaded
+                </option>
+                <option value="errors" data-i18n="Были ошибки 500">
+                  Had HTTP 500 errors
+                </option>
+                <option value="deferred" data-i18n="Отложенные">
+                  Deferred
+                </option>
+                <option value="downloaded" data-i18n="Новые загрузки">
+                  New downloads
+                </option>
+                <option value="local" data-i18n="На ПК">On this PC</option>
+                <option value="all" data-i18n="Все отмеченные">
+                  All selected
+                </option>
               </select>
             </div>
           </div>
@@ -167,17 +260,19 @@
             <table id="file-table">
               <thead>
                 <tr>
-                  <th>Файл</th>
-                  <th>Состояние</th>
+                  <th data-i18n="Файл">File</th>
+                  <th data-i18n="Состояние">Status</th>
                   <th>HTTP</th>
-                  <th class="num">Попытки</th>
-                  <th>На ПК / размер</th>
+                  <th class="num" data-i18n="Попытки">Attempts</th>
+                  <th data-i18n="На ПК / размер">On PC / size</th>
                   <th id="downloaded-heading"></th>
                 </tr>
               </thead>
               <tbody id="files"></tbody>
             </table>
-            <div id="empty" class="empty" hidden>Файлов нет</div>
+            <div id="empty" class="empty" hidden data-i18n="Файлов нет">
+              No files
+            </div>
           </div>
           <footer class="table-footer">
             <span id="pagination-label">—</span>
@@ -185,112 +280,190 @@
               <button
                 id="prev"
                 class="icon-button"
-                aria-label="Предыдущая страница"
+                aria-label="Previous page"
+                data-i18n-aria-label="Предыдущая страница"
               >
                 ←</button
               ><button
                 id="next"
                 class="icon-button"
-                aria-label="Следующая страница"
+                aria-label="Next page"
+                data-i18n-aria-label="Следующая страница"
               >
                 →
               </button>
             </div>
-            <button id="load-more" class="button" hidden>Показать ещё</button>
+            <button
+              id="load-more"
+              class="button"
+              hidden
+              data-i18n-once="Показать ещё"
+            >
+              Show more
+            </button>
           </footer>
         </section>
         <aside class="activity-panel">
           <div class="activity-heading">
-            <h2>Журнал</h2>
-            <a href="/requests#events" target="_blank" rel="noopener"
-              >Открыть ↗</a
+            <h2 data-i18n="Журнал">Logs</h2>
+            <a
+              href="/requests#events"
+              target="_blank"
+              rel="noopener"
+              data-i18n="Открыть ↗"
+              >Open ↗</a
             >
           </div>
           <div id="events" class="events"></div>
         </aside>
       </div>
       <footer class="page-footer">
-        <span id="root-path">Папка синхронизации</span>
+        <span id="root-path" data-i18n="Папка синхронизации">Sync folder</span>
       </footer>
     </main>
     <div
       id="toast-stack"
       class="toast-stack"
       role="region"
-      aria-label="Уведомления"
+      aria-label="Notifications"
+      data-i18n-aria-label="Уведомления"
     ></div>
     <dialog id="details">
       <form method="dialog">
-        <button class="dialog-close" aria-label="Закрыть">×</button>
+        <button
+          class="dialog-close"
+          aria-label="Close"
+          data-i18n-aria-label="Закрыть"
+        >
+          ×
+        </button>
       </form>
-      <div class="eyebrow">ДАННЫЕ ФАЙЛА</div>
+      <div class="eyebrow" data-i18n="ДАННЫЕ ФАЙЛА">FILE DETAILS</div>
       <h2 id="detail-name"></h2>
       <p id="detail-path" class="detail-path"></p>
       <dl id="detail-values"></dl>
-      <p class="detail-note">
-        Сетевой объём включает повторы. Сохранение файла проверяется через
+      <p
+        class="detail-note"
+        data-i18n="Сетевой объём включает повторы. Сохранение файла проверяется через Windows."
+      >
+        Network traffic includes retries. Saved files are verified through
         Windows.
       </p>
     </dialog>
     <dialog id="setup-dialog">
       <form id="setup-form">
-        <div class="eyebrow">ПОДКЛЮЧЕНИЕ ПРИЛОЖЕНИЯ</div>
-        <h2>Настройка Яндекс Диска</h2>
-        <p class="dialog-intro">Укажите папку синхронизации и приложение.</p>
-        <label class="field" for="setup-root">Папка синхронизации</label>
+        <div class="eyebrow" data-i18n="ПОДКЛЮЧЕНИЕ ПРИЛОЖЕНИЯ">
+          CLIENT CONNECTION
+        </div>
+        <h2 data-i18n="Настройка Яндекс Диска">Yandex Disk settings</h2>
+        <p
+          class="dialog-intro"
+          data-i18n="Укажите папку синхронизации и приложение."
+        >
+          Select the sync folder and the client application.
+        </p>
+        <label class="field" for="setup-root" data-i18n="Папка синхронизации"
+          >Sync folder</label
+        >
         <div class="path-picker">
           <input
             id="setup-root"
             list="root-options"
             required
-            placeholder="Путь к папке Яндекс Диска"
+            placeholder="Path to the Yandex Disk folder"
+            data-i18n-placeholder="Путь к папке Яндекс Диска"
           /><datalist id="root-options"></datalist
-          ><button type="button" id="browse-root" class="button">Обзор…</button>
+          ><button
+            type="button"
+            id="browse-root"
+            class="button"
+            data-i18n="Обзор…"
+          >
+            Browse…
+          </button>
         </div>
-        <label class="field" for="setup-client">Приложение Яндекс Диск</label>
+        <label
+          class="field"
+          for="setup-client"
+          data-i18n="Приложение Яндекс Диск"
+          >Yandex Disk application</label
+        >
         <div class="path-picker">
           <input
             id="setup-client"
             required
-            placeholder="Полный путь к YandexDisk4.exe"
-          /><button type="button" id="browse-client" class="button">
-            Обзор…
+            placeholder="Full path to YandexDisk4.exe"
+            data-i18n-placeholder="Полный путь к YandexDisk4.exe"
+          /><button
+            type="button"
+            id="browse-client"
+            class="button"
+            data-i18n="Обзор…"
+          >
+            Browse…
           </button>
         </div>
-        <p class="detail-note">
-          Скачиваются только файлы с отметкой «Хранить на компьютере».
+        <p
+          class="detail-note"
+          data-i18n="Скачиваются только файлы с отметкой «Хранить на компьютере»."
+        >
+          Only files selected to keep on this PC are downloaded.
         </p>
         <p id="setup-error" class="dialog-error" role="alert" hidden></p>
         <div class="dialog-actions">
-          <button type="button" id="setup-cancel" class="button">Отмена</button
-          ><button class="button primary" type="submit">Сохранить</button>
+          <button
+            type="button"
+            id="setup-cancel"
+            class="button"
+            data-i18n="Отмена"
+          >
+            Cancel</button
+          ><button class="button primary" type="submit" data-i18n="Сохранить">
+            Save
+          </button>
         </div>
       </form>
     </dialog>
     <dialog id="consent-dialog">
-      <div class="eyebrow">ПОДКЛЮЧЕНИЕ HTTPS</div>
-      <h2>Сертификат прокси</h2>
-      <p class="dialog-intro">
-        Прокси перезапустит Диск и передаст сертификат только его процессу.
-        Хранилище сертификатов Windows не меняется.
+      <div class="eyebrow" data-i18n="ПОДКЛЮЧЕНИЕ HTTPS">HTTPS CONNECTION</div>
+      <h2 data-i18n="Сертификат прокси">Proxy certificate</h2>
+      <p
+        class="dialog-intro"
+        data-i18n="Прокси перезапустит Диск и передаст сертификат только его процессу. Хранилище сертификатов Windows не меняется."
+      >
+        The proxy will restart Disk and pass the certificate only to its
+        process. The Windows certificate store is unchanged.
       </p>
-      <p class="dialog-intro">
-        Через прокси работает только Диск. При остановке отметки хранения
-        восстанавливаются, Диск запускается напрямую.
+      <p
+        class="dialog-intro"
+        data-i18n="Через прокси работает только Диск. При остановке отметки хранения восстанавливаются, Диск запускается напрямую."
+      >
+        Only Disk uses the proxy. Stopping restores offline selections and
+        starts Disk with a direct connection.
       </p>
       <div class="certificate">
-        <span>Отпечаток сертификата этого ПК · SHA-1</span
+        <span data-i18n="Отпечаток сертификата этого ПК · SHA-1"
+          >Certificate fingerprint on this PC · SHA-1</span
         ><code id="certificate-thumbprint"></code>
       </div>
       <label class="consent-check"
-        ><input id="consent-checkbox" type="checkbox" />Разрешаю использовать
-        этот сертификат для HTTPS Диска.</label
+        ><input id="consent-checkbox" type="checkbox" /><span
+          class="i18n-text"
+          data-i18n="Разрешаю использовать этот сертификат для HTTPS Диска."
+          >Allow this certificate for Disk HTTPS connections.</span
+        ></label
       >
       <p id="consent-error" class="dialog-error" role="alert" hidden></p>
       <div class="dialog-actions">
-        <button id="consent-cancel" class="button">Отмена</button
-        ><button id="consent-start" class="button primary" disabled>
-          Включить прокси
+        <button id="consent-cancel" class="button" data-i18n="Отмена">
+          Cancel</button
+        ><button
+          id="consent-start"
+          class="button primary"
+          disabled
+          data-i18n="Включить прокси"
+        >
+          Start proxy
         </button>
       </div>
     </dialog>
@@ -304,8 +477,10 @@
     >
       <header class="board-header">
         <div>
-          <h1 id="board-title">Загрузки Диска</h1>
-          <p id="board-status">Ожидание данных</p>
+          <h1 id="board-title">Yandex Disk Proxy</h1>
+          <p id="board-status" data-i18n-once="Ожидание данных">
+            Waiting for data
+          </p>
         </div>
         <button id="close-board" class="button board-close" type="button">
           <svg
@@ -320,43 +495,53 @@
           >
             <path d="M4 9h5V4m6 0v5h5M9 20v-5H4m11 5v-5h5" />
           </svg>
-          К файлам <kbd>Esc</kbd>
+          <span class="i18n-text" data-i18n="К файлам">Back to files</span>
+          <kbd>Esc</kbd>
         </button>
       </header>
       <div class="board-primary">
         <article class="board-card">
-          <h2>Осталось скачать</h2>
+          <h2 data-i18n="Осталось скачать">Left to download</h2>
           <strong id="board-pending">—</strong>
-          <p id="board-pending-detail">Ожидание данных</p>
+          <p id="board-pending-detail" data-i18n-once="Ожидание данных">
+            Waiting for data
+          </p>
         </article>
         <article class="board-card board-downloads">
-          <h2>Новые загрузки</h2>
+          <h2 data-i18n="Новые загрузки">New downloads</h2>
           <strong id="board-downloaded">—</strong>
-          <p id="board-downloaded-detail">Ожидание данных</p>
+          <p id="board-downloaded-detail" data-i18n-once="Ожидание данных">
+            Waiting for data
+          </p>
         </article>
       </div>
       <div class="board-secondary">
         <article class="board-card board-errors">
-          <h2>Ответы 500</h2>
+          <h2 data-i18n="Ответы 500">HTTP 500 responses</h2>
           <strong id="board-errors">—</strong>
           <p id="board-errors-detail"></p>
         </article>
         <article class="board-card board-deferred">
-          <h2>Отложено</h2>
+          <h2 data-i18n="Отложено">Deferred</h2>
           <strong id="board-deferred">—</strong>
           <p id="board-deferred-detail"></p>
         </article>
         <article class="board-card">
-          <h2>Передано по сети</h2>
+          <h2 data-i18n="Передано по сети">Network traffic</h2>
           <strong id="board-network">—</strong>
           <p id="board-network-detail"></p>
         </article>
       </div>
       <footer class="board-footer">
-        <span id="board-updated">Ожидание данных</span
-        ><span id="board-mode">Esc — вернуться к файлам</span>
+        <div class="locale-switcher board-language" data-language-picker></div>
+        <span id="board-updated" data-i18n-once="Ожидание данных"
+          >Waiting for data</span
+        ><span id="board-mode" data-i18n-once="Esc — вернуться к файлам"
+          >Esc — back to files</span
+        >
       </footer>
     </section>
+    <script src="/i18n.js"></script>
     <script src="/list-motion.js"></script>
     <script src="/toasts.js"></script>
     <script src="/meters.js"></script>

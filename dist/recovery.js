@@ -4,12 +4,14 @@ let nonce = "",
   connected = false,
   paused = false,
   busy = false,
-  view = "queue",
+  view = I18n.preferences.get("recoveryView", "queue"),
   offset = 0,
   query = new URLSearchParams(location.search).get("q") || "",
   chosen = "",
   revision = 0;
-const labels = {
+let lastState = null,
+  lastList = null;
+const labels = I18n.labels({
   queued: "В очереди",
   fetching: "Запрос ссылки",
   downloading: "Загружается",
@@ -27,19 +29,19 @@ const labels = {
   error: "Ошибка",
   cooldown: "Пауза повторов",
   restoring: "Возврат в очередь",
-};
+});
 function bytes(n) {
   n = Number(n) || 0;
   let i = 0;
-  const units = ["Б", "КБ", "МБ", "ГБ"];
+  const units = [I18n.t("Б"), I18n.t("КБ"), I18n.t("МБ"), I18n.t("ГБ")];
   while (n >= 1024 && i < 3) {
     n /= 1024;
     i++;
   }
   return (
-    new Intl.NumberFormat("ru", { maximumFractionDigits: i ? 1 : 0 }).format(
-      n,
-    ) +
+    new Intl.NumberFormat(I18n.locale, {
+      maximumFractionDigits: i ? 1 : 0,
+    }).format(n) +
     " " +
     units[i]
   );
@@ -56,11 +58,11 @@ async function json(path, options = {}) {
     signal: AbortSignal.timeout(45000),
   });
   const v = await r.json();
-  if (!r.ok) throw Error(v.error || "Ошибка запроса");
+  if (!r.ok) throw Error(I18n.t(v.error) || I18n.t("Ошибка запроса"));
   return v;
 }
 async function action(name, data = {}) {
-  if (!connected) throw Error("Нет связи с панелью");
+  if (!connected) throw Error(I18n.t("Нет связи с панелью"));
   return json("/api/recovery/" + name, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Panel-Nonce": nonce },
@@ -72,20 +74,20 @@ async function run(name, data = {}) {
     const result = await action(name, data);
     const message =
       name === "enqueue"
-        ? "Файл добавлен в очередь."
+        ? I18n.t("Файл добавлен в очередь.")
         : name === "batch"
           ? result.queued
-            ? `Добавлено в очередь: ${result.queued}.`
-            : "Нет новых файлов для добавления."
+            ? I18n.t("Добавлено в очередь: {0}.", [result.queued])
+            : I18n.t("Нет новых файлов для добавления.")
           : name === "folder"
-            ? "Папка загрузок открыта."
+            ? I18n.t("Папка загрузок открыта.")
             : data.action === "pause"
-              ? "Прямые загрузки приостановлены."
+              ? I18n.t("Прямые загрузки приостановлены.")
               : data.action === "resume"
-                ? "Прямые загрузки продолжены."
+                ? I18n.t("Прямые загрузки продолжены.")
                 : data.file
-                  ? "Загрузка файла остановлена."
-                  : "Прямые загрузки остановлены.";
+                  ? I18n.t("Загрузка файла остановлена.")
+                  : I18n.t("Прямые загрузки остановлены.");
     Toasts.show(message, { type: "success" });
     await refresh();
   } catch (e) {
@@ -105,9 +107,12 @@ async function browser(path) {
     const value = await action("browser", { file: path });
     if (tab) tab.location = value.url;
     else {
-      Toasts.show("Разрешите открытие новой вкладки и повторите загрузку.", {
-        type: "error",
-      });
+      Toasts.show(
+        I18n.t("Разрешите открытие новой вкладки и повторите загрузку."),
+        {
+          type: "error",
+        },
+      );
     }
   } catch (e) {
     if (tab) tab.close();
@@ -115,12 +120,13 @@ async function browser(path) {
   }
 }
 function render(data) {
+  lastList = { data, view };
   const entries = [];
   for (const row of data.rows) {
     const tr = el("tr");
     const file = el("td");
     file.append(el("div", "recovery-path", row.path));
-    if (row.error) file.append(el("div", "recovery-error", row.error));
+    if (row.error) file.append(el("div", "recovery-error", I18n.t(row.error)));
     tr.append(file, el("td", row.status, labels[row.status] || row.status));
     const size = el(
       "td",
@@ -144,14 +150,14 @@ function render(data) {
           "waiting_session",
         ].includes(row.status) && view === "queue";
       controls.append(
-        button(active ? "Остановить" : "Скачать", () =>
+        button(active ? I18n.t("Остановить") : I18n.t("Скачать"), () =>
           run(
             active ? "control" : "enqueue",
             active ? { action: "cancel", file: row.path } : { file: row.path },
           ),
         ),
       );
-      controls.append(button("Браузер", () => browser(row.path)));
+      controls.append(button(I18n.t("Браузер"), () => browser(row.path)));
       controls.append(
         button("URL", () => {
           chosen = row.path;
@@ -174,10 +180,44 @@ function render(data) {
   offset = data.offset;
   $("empty").hidden = data.rows.length > 0;
   $("count").textContent = total
-    ? `${offset + 1}–${offset + data.rows.length} из ${total}`
-    : "Файлов нет";
+    ? I18n.t("{0}–{1} из {2}", [offset + 1, offset + data.rows.length, total])
+    : I18n.t("Файлов нет");
   $("previous").disabled = offset === 0;
   $("next-page").disabled = offset + data.rows.length >= total;
+}
+function renderState(s, fresh = true) {
+  nonce = s.nonce;
+  if (fresh) connected = true;
+  const r = s.recovery,
+    c = r.counts;
+  paused = r.paused;
+  $("connection").textContent = connected ? "" : I18n.t("Нет связи");
+  $("verified").textContent = r.verified;
+  $("verified-size").textContent = bytes(r.verified_bytes);
+  $("active").textContent = paused
+    ? 0
+    : (c.downloading || 0) + (c.fetching || 0);
+  $("speed").textContent =
+    bytes(r.speed) + I18n.t("/с · до ") + r.workers + I18n.t(" файлов");
+  $("waiting").textContent =
+    (c.queued || 0) +
+    (c.retry || 0) +
+    (c.waiting_session || 0) +
+    (c.paused || 0);
+  $("failed").textContent = c.failed || 0;
+  $("session").textContent = r.account_verified
+    ? I18n.t("Аккаунт проверен")
+    : r.credentials_seen
+      ? I18n.t("Сессия Диска получена")
+      : I18n.t("Ожидание запроса Диска через прокси");
+  $("destination").textContent = r.destination;
+  $("network").textContent = I18n.t("За 5 мин: {0} пустых ответов, {1} отмен", [
+    s.network.empty_downloads,
+    s.network.cancelled,
+  ]);
+  $("pause-downloads").textContent = paused
+    ? I18n.t("Продолжить")
+    : I18n.t("Приостановить");
 }
 async function refresh() {
   if (busy) return;
@@ -185,34 +225,8 @@ async function refresh() {
   const requested = revision;
   try {
     const s = await json("/api/state");
-    nonce = s.nonce;
-    connected = true;
-    const r = s.recovery,
-      c = r.counts;
-    paused = r.paused;
-    $("connection").textContent = "";
-    $("verified").textContent = r.verified;
-    $("verified-size").textContent = bytes(r.verified_bytes);
-    $("active").textContent = paused
-      ? 0
-      : (c.downloading || 0) + (c.fetching || 0);
-    $("speed").textContent =
-      bytes(r.speed) + "/с · до " + r.workers + " файлов";
-    $("waiting").textContent =
-      (c.queued || 0) +
-      (c.retry || 0) +
-      (c.waiting_session || 0) +
-      (c.paused || 0);
-    $("failed").textContent = c.failed || 0;
-    $("session").textContent = r.account_verified
-      ? "Аккаунт проверен"
-      : r.credentials_seen
-        ? "Сессия Диска получена"
-        : "Ожидание запроса Диска через прокси";
-    $("destination").textContent = r.destination;
-    $("network").textContent =
-      `За 5 мин: ${s.network.empty_downloads} пустых ответов, ${s.network.cancelled} отмен`;
-    $("pause-downloads").textContent = paused ? "Продолжить" : "Приостановить";
+    lastState = s;
+    renderState(s);
     const data = await json(
       (view === "queue" ? "/api/recovery" : "/api/files") +
         "?" +
@@ -229,8 +243,11 @@ async function refresh() {
     Toasts.problem("connection", "");
   } catch (e) {
     connected = false;
-    $("connection").textContent = "Нет связи";
-    Toasts.problem("connection", "Не удалось обновить загрузки. " + e.message);
+    $("connection").textContent = I18n.t("Нет связи");
+    Toasts.problem(
+      "connection",
+      I18n.t("Не удалось обновить загрузки. ") + e.message,
+    );
     for (const id of ["batch", "pause-downloads", "cancel-downloads", "folder"])
       $(id).disabled = true;
   } finally {
@@ -241,6 +258,7 @@ async function refresh() {
 for (const mode of ["queue", "files"])
   $("tab-" + mode).addEventListener("click", () => {
     view = mode;
+    I18n.preferences.set("recoveryView", view);
     offset = 0;
     revision++;
     for (const v of ["queue", "files"])
@@ -287,7 +305,7 @@ $("url-form").addEventListener("submit", async (event) => {
     await action("enqueue", { file: chosen, url: $("download-url").value });
     $("download-url").value = "";
     $("url-dialog").close();
-    Toasts.show("Файл добавлен в очередь по указанной ссылке.", {
+    Toasts.show(I18n.t("Файл добавлен в очередь по указанной ссылке."), {
       type: "success",
     });
     refresh();
@@ -295,6 +313,13 @@ $("url-form").addEventListener("submit", async (event) => {
     $("url-error").textContent = e.message;
     $("url-error").hidden = false;
   }
+});
+for (const mode of ["queue", "files"])
+  $("tab-" + mode).classList.toggle("active", view === mode);
+I18n.onChange(() => {
+  if (lastState) renderState(lastState, false);
+  if (lastList?.view === view) render(lastList.data);
+  $("url-error").textContent = I18n.t($("url-error").textContent);
 });
 refresh();
 setInterval(refresh, 2000);

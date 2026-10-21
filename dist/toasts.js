@@ -3,7 +3,11 @@
   const visible = new Map();
   const problems = new Map();
   const icons = { success: "✓", error: "!", info: "i" };
-  const titles = { success: "Готово", error: "Ошибка", info: "Информация" };
+  const titles = I18n.labels({
+    success: "Готово",
+    error: "Ошибка",
+    info: "Информация",
+  });
   const reduced = () =>
     window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
@@ -30,7 +34,7 @@
   }
 
   function show(message, { type = "info", key, duration } = {}) {
-    const text = String(message || "").trim();
+    const text = I18n.t(String(message || "").trim());
     if (!text) return;
     if (!icons[type]) type = "info";
     key ??= `${type}:${text}`;
@@ -57,13 +61,15 @@
     const close = document.createElement("button");
     close.className = "toast-close";
     close.type = "button";
-    close.setAttribute("aria-label", "Закрыть уведомление");
+    close.setAttribute("aria-label", I18n.t("Закрыть уведомление"));
     close.textContent = "×";
     close.addEventListener("click", () => dismiss(key));
     card.append(icon, content, close);
 
     const item = {
       card,
+      title,
+      body,
       close,
       message: text,
       type,
@@ -135,5 +141,13 @@
     }
   }
 
+  I18n.onChange(() => {
+    for (const item of visible.values()) {
+      item.title.textContent = titles[item.type];
+      item.message = I18n.t(item.message);
+      item.body.textContent = item.message;
+      item.close.setAttribute("aria-label", I18n.t("Закрыть уведомление"));
+    }
+  });
   window.Toasts = { show, dismiss, problem };
 })();

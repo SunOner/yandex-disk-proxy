@@ -1,95 +1,94 @@
-# Прокси Яндекс Диска
+# Yandex Disk Proxy
 
-## Запуск EXE
+**English** · [Русский](README.ru.md)
 
-1. Скачайте **YandexDiskProxy.exe** из [релиза](https://github.com/SunOner/yandex-disk-local-proxy/releases/latest).
-2. Запустите EXE. Python и установка зависимостей не нужны.
-3. В панели **http://127.0.0.1:18765** выберите папку синхронизации и `YandexDisk4.exe` кнопками **«Обзор…»**.
-4. Нажмите **«Включить прокси»** и подтвердите сертификат.
+## Run
 
-Оставьте консоль открытой. Прокси работает до ручной остановки. Вкладку браузера можно закрыть. Сборка для Windows 10/11 x64, без цифровой подписи. Проверено на Windows 11 с Диском 4.28.6.5804.
+1. Download **YandexDiskProxy.exe** from the [latest release](https://github.com/SunOner/yandex-disk-proxy/releases/latest).
+2. Run it. Python and dependency installation are not required.
+3. In **http://127.0.0.1:18765**, use **Browse…** to select the sync folder and `YandexDisk4.exe`.
+4. Click **Start proxy** and approve the certificate in the panel.
 
-## Режимы
+Keep the console open. The proxy runs until stopped manually; closing the browser tab does not stop it. Windows 10/11 x64; unsigned EXE. Tested on Windows 11 with Yandex Disk 4.28.6.5804.
 
-| Режим | Действие |
+## Language and preferences
+
+English is the default. The **English / Русский** flag menu is in the bottom-left corner of every page and on the fullscreen dashboard. Switching languages does not reload the page. The browser remembers the selection and updates other open tabs of this panel.
+
+The browser also remembers file views and journal filters. Search text, request contents and token visibility are not saved. Tokens are hidden whenever a page opens. Clearing site data restores English and the default preferences.
+
+## Modes
+
+| Mode | Behaviour |
 | --- | --- |
-| Откладывать файлы | После HTTP 500 временно снимает отметку хранения у полностью облачного неизменённого файла. Повторные запросы получают локальный HTTP 503 с `Retry-After`. |
-| Ограничивать повторы | Приостанавливает повторные запросы без изменения отметок хранения. |
-| Наблюдать | Показывает события без изменения запросов и отметок. |
+| Defer files | After HTTP 500, temporarily removes the keep-on-PC flag from an unchanged, fully cloud-only file. Repeated requests receive a local HTTP 503 with `Retry-After`. |
+| Limit retries | Delays repeated requests without changing keep-on-PC flags. |
+| Observe | Records events without changing requests or file flags. |
 
-При переходе из откладывания в другой режим файлы возвращаются в очередь.
+Switching away from deferral returns deferred files to the queue. Only files marked **Keep on this computer** are selected. Partially downloaded and modified files are not deferred. The proxy cannot restore unavailable server data or turn a failed download into a successful one.
 
-Скачиваются только файлы с отметкой **«Хранить на компьютере»**. Частично скачанные и изменённые файлы не откладываются. «Новые загрузки» учитывает сохранённые файлы; сетевой объём включает повторы. Прокси не восстанавливает недоступные данные Яндекса.
+The queue and remaining size are refreshed from Windows metadata every 10 seconds. **Refresh list** checks immediately. Newly selected folders, removed flags and deleted files are picked up without restarting. Files temporarily deferred by the proxy remain in the queue.
 
-В «Новых загрузках» последние завершённые файлы идут первыми, с датой и временем подтверждения Windows. Кнопка **«Показать ещё»** раскрывает следующие 60 файлов. Новые загрузки появляются сверху, уже раскрытая часть списка сохраняется.
+**New downloads** lists confirmed native downloads newest first, with the Windows confirmation time. **Show more** reveals another 60 entries and keeps already expanded rows. Direct downloads are counted separately. Network traffic includes retries.
 
-Цифры счётчиков обновляются с прокруткой изменившихся разрядов. Кнопка **⛶** в карточке «Передано по сети» открывает полноэкранное табло; **Esc** или **«К файлам»** возвращает список. Если полный экран недоступен, табло занимает окно браузера. При потере связи остаются последние значения и время обновления. Отключение анимации в Windows учитывается.
+Counter digits roll when their values change. The **⛶** button opens a fullscreen dashboard; **Esc** or **Back to files** returns to the list. If browser fullscreen is unavailable, the dashboard fills the window. Last values and their timestamp remain visible when disconnected. Reduced-motion settings are respected.
 
-Список и размер очереди обновляются каждые 10 секунд по отметкам Windows. Кнопка **«Обновить список»** запускает проверку сразу. Новые отмеченные папки появляются без перезапуска; снятие отметки и удаление файлов также учитываются. Проверка читает только метаданные. Временно отложенные прокси файлы остаются в очереди.
+## Stop and recover
 
-## Остановка
-
-Нажмите **«Остановить и восстановить»** или закройте консоль. Прокси вернёт отметки хранения и запустит Диск напрямую. После сбоя питания запустите EXE снова или выполните:
+Click **Stop and restore** or close the console. The proxy restores keep-on-PC flags and restarts Disk directly. After a power failure, run the EXE again or use:
 
 ```powershell
 .\YandexDiskProxy.exe --recover
 ```
 
-Параметр `--stop` останавливает текущий сеанс. Автозапуска при входе в Windows нет.
+`--stop` stops the current session. There is no automatic startup at Windows sign-in.
 
-## Сертификат и данные
+## Certificate and local data
 
-Для каждой установки создаётся свой сертификат. После подтверждения в панели он автоматически передаётся только запущенному процессу Диска через `SSL_CERT_FILE`. Импорт в хранилище Windows и выбор хранилища не нужны. При остановке Диск запускается без этих параметров. Через прокси направляется только процесс Диска; системный прокси не меняется. Проверка сертификатов серверов остаётся включённой. Новый вход в аккаунт не нужен.
+Each installation creates its own certificate. After approval in the panel, it is passed only to the Disk process through `SSL_CERT_FILE`. There is no Windows certificate-store import or store-selection dialog. Stopping restarts Disk without these parameters. Only the Disk process uses the proxy; the system proxy is unchanged. Upstream certificate verification remains enabled. No new account login is required.
 
-При восстановлении незавершённого сеанса старой версии удаляется только сертификат, который установил этот сеанс.
+Recovery of an unfinished session from an older version removes only the certificate installed by that session. Certificate availability and the approved fingerprint are checked every 15 seconds. The panel can restart Disk with the same certificate after a client TLS failure. Client and upstream TLS errors are shown separately.
 
-Настройки, ключ и журнал EXE хранятся в **`%LOCALAPPDATA%\YandexDiskProxy`**. Не удаляйте эту папку до завершения восстановления и не передавайте её другим.
+The EXE stores settings, its key and journals in **`%LOCALAPPDATA%\YandexDiskProxy`**. Keep this directory until recovery completes; do not share it.
 
-## Запросы и журнал
+## Requests and diagnostics
 
-Результаты действий показаны во всплывающих уведомлениях с анимацией и кнопкой закрытия. При наведении или фокусе клавиатуры отсчёт скрытия приостанавливается; повторяющиеся ошибки фонового обновления не дублируются. Отключение анимации в Windows учитывается.
+**Requests and journal ↗** opens methods, URLs, headers, responses, timings and TLS errors in another tab. Local HTTP 503 responses are labelled separately from upstream responses. Search, error and protocol filters, unusual-operation filters and pause controls are available. Action results use animated toasts with keyboard and hover pause.
 
-Кнопка **«Запросы и журнал ↗»** открывает отдельную вкладку. В ней показаны методы, URL, заголовки, ответы, длительность и ошибки TLS. Локальные ответы 503 помечены отдельно от ответов Яндекса. Есть поиск, фильтр ошибок и пауза обновления. Тела запросов и ответов не записываются.
+**Hide tokens** is enabled by default. Turning it off reveals the selected request's original headers from this run's memory. The setting resets when the page opens. Disk journals and diagnostic exports always mask tokens, cookies, query parameters and signed download URLs. After restarting, only masked records remain.
 
-В деталях запроса указаны маршрут (клиент через прокси или прямая очередь), время получения заголовков, первого байта и фактический объём ответа. Пустой HTTP 206 не считается скачанным файлом. На странице прямых загрузок есть число пустых ответов и отмен за последние пять минут.
+The journal records HTTP methods and versions, transferred bytes, connection and TLS timing, ALPN, connection IDs, redirect relationships, retries, cancellations, empty or incomplete responses and WebSocket message counts and sizes. Request, response, file and WebSocket message bodies are never recorded. Connections outside the existing decryption list expose only network metadata; that list is not expanded.
 
-**«Скрывать токены»** включено по умолчанию. Снятие флажка показывает оригинал выбранного запроса. Он доступен только в памяти текущего запуска; настройка сбрасывается при открытии вкладки. На диск записываются версии со скрытыми токенами, cookies, параметрами URL и адресами подписанных загрузок. После перезапуска доступны только эти версии.
+Selected-file events include changes to keep-on-PC flags and sizes, missing or moved paths, renewed download requirements, deferral, restoration and completed downloads. These are observations from Windows metadata and do not attribute an action to the user or cloud service.
 
-В памяти хранятся до 5 000 записей, максимум 32 МБ. Журналы автоматически ротируются: запросы и операции — четыре файла по 10 МБ, события — четыре файла по 2 МБ, контрольные точки сводки — два файла по 1 МБ. На главном экране показываются последние события, в отдельной вкладке — до 400. В консоли остаются адрес панели и сообщения запуска.
+Up to 5,000 records and 32 MB are retained in memory. Rotation limits: requests and operations use four 10 MB files; events use four 2 MB files; summary checkpoints use two 1 MB files. The main page shows recent events; the journal shows up to 400. The console contains startup messages and the panel address.
 
-Во вкладке запросов есть фильтры по типу операции и протоколу, а также **«Необычные»**: неизвестные операции и методы, ошибки, отмены, пустые и неполные ответы, долгие запросы, повторы после ошибок и длинные цепочки перенаправлений. Повтор метаданных не считается повторной загрузкой. Для старых записей, где объём тела не измерялся, пустота ответа не предполагается.
+**Operation summary** retains counts, errors, retries, durations and bytes across rotation and restarts, with the period start displayed. Evicted records and capture gaps are reported separately. Requests unfinished at restart are marked accordingly. Metadata retries are not counted as file downloads; old records without measured body sizes are not assumed empty.
 
-Записываются размеры отправленных и полученных данных для всех HTTP-методов, HTTP-версия, время подключения и TLS, ALPN, идентификаторы соединений и связь перенаправленных запросов. Для WebSocket учитываются число сообщений и объём в обе стороны. Соединения вне списка расшифровки имеют только сетевые метаданные; список HTTPS-доменов не расширяется. Тела файлов, API-запросов и WebSocket-сообщений не записываются.
+**Download diagnostics** creates a local ZIP with the summary, retained records, rotated journals and file checksums. Exports always mask secrets regardless of the original-header checkbox. Configuration, certificates, keys and bodies are excluded. File names and paths remain. Nothing is uploaded automatically.
 
-Изменения выбранных файлов также попадают в журнал: добавление и снятие отметок хранения, удаление или перемещение из наблюдаемого пути, изменение размера, повторная потребность в загрузке, откладывание и восстановление прокси, завершённая загрузка. Это наблюдения по метаданным Windows; действия пользователя и изменения, пришедшие из облака, не приписываются друг другу.
+## Direct downloads
 
-**«Сводка операций»** показывает количество, ошибки, повторы, среднюю и максимальную длительность, объём по операциям и адресам. Счётчики сохраняются после ротации и перезапуска, начало периода указано в панели. Удаление старых записей по лимиту и пропуски захвата показаны отдельно. Если завершение запроса не записано до перезапуска, запись получает соответствующую отметку.
+Open **Direct downloads ↗** or **Download…** beside a file. **Download remaining** queues only remaining files marked for storage on this PC, including files deferred by the current session. Up to four files download concurrently, smaller files first. Interrupted downloads resume from the saved range; the queue moves on after three failed attempts. Pause, stop and individual retry controls are available.
 
-Кнопка **«Скачать диагностику»** создаёт локальный ZIP со сводкой, сохранёнными журналами, текущими записями и контрольными суммами файлов архива. Токены скрываются независимо от флажка просмотра оригиналов. Конфигурация, сертификаты, ключи и тела файлов в архив не входят. Имена и пути файлов остаются. Автоматической отправки архива нет.
+Results go to **`%USERPROFILE%\Downloads\Yandex-Recovery\<Disk folder>`**, preserving subfolders. Files receive their final names after size and API checksum verification. Existing different files are not overwritten; incomplete files use `.part`. Click **Resume** after restarting. Native cloud placeholders are not replaced and files are not uploaded to the cloud.
 
-Доступность файла сертификата и совпадение с подтверждённым отпечатком проверяются каждые 15 секунд. При ошибке TLS клиента можно перезапустить Диск из панели с тем же сертификатом. Ошибки TLS клиента и сервера показаны раздельно; проверка сертификатов Яндекса остаётся включённой.
+Downloads use the proxied client's existing session; no rclone, separate OAuth app or new login is required. The API account is checked against the selected Disk folder. Authorization and signed URLs remain in memory; only queue state and masked journals are saved. After restarting, the panel waits for a new client request to obtain the session.
 
-## Прямые загрузки
+In **Disk files**, **Browser** obtains a fresh link; **URL** accepts an existing direct Yandex HTTPS link for the selected file, with checksum verification. Browser downloads use the browser's download folder and do not count towards the verified queue. Storage servers receive signed URLs without account authorization headers.
 
-Откройте **«Прямые загрузки ↗»** или **«Скачать…»** у файла. Кнопка **«Скачать оставшиеся»** добавляет только оставшиеся файлы с отметкой хранения на ПК, включая отложенные текущим сеансом. Одновременно скачиваются до четырёх файлов, небольшие идут первыми. После обрыва загрузка продолжается с сохранённого диапазона; после трёх неудачных попыток очередь переходит дальше. Есть общая пауза, остановка и повтор отдельного файла.
+HTTP 500, empty and interrupted responses can also occur with fresh direct links. Parallel downloads help when the server actually returns file content.
 
-Результат: **`%USERPROFILE%\Downloads\Yandex-Recovery\<папка Диска>`**, с исходными подпапками. Файл получает итоговое имя после проверки размера и контрольных сумм из API; существующие другие файлы не перезаписываются. Части сохраняются как `.part`. При повторном запуске нажмите **«Продолжить»**. Прямые загрузки учитываются отдельно от завершённых загрузок приложения. Облачные заглушки не заменяются, файлы в облако не загружаются.
-
-Используется сессия запущенного через прокси клиента: новый вход, rclone и отдельное OAuth-приложение не нужны. Аккаунт API сверяется с выбранной папкой Диска. Авторизация и подписанные URL остаются в памяти; на диск попадают только состояние очереди и журнал с маскированием. После перезапуска панель ждёт новый запрос клиента для получения сессии.
-
-Во вкладке **«Файлы Диска»** можно выбрать **«Браузер»** для получения свежей ссылки или **«URL»** для вставки уже имеющейся прямой HTTPS-ссылки Яндекса. URL используется только для выбранного файла с проверкой его контрольной суммы. Браузер сохраняет файл в свою папку загрузок и сам управляет скачиванием; эта загрузка не входит в счётчик проверенной очереди. Серверы хранения получают подписанную ссылку без заголовков авторизации аккаунта.
-
-HTTP 500 и пустые или оборванные ответы возможны и по свежим прямым ссылкам. Параллельная очередь помогает обойти задержки клиента, когда сервер действительно выдаёт содержимое.
-
-## Исходники и сборка
+## Source and build
 
 ```powershell
 py -3.12 bootstrap.py
 .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .venv\Scripts\python.exe -m unittest discover -s tests -v
+Get-ChildItem tests/test_*.cjs | ForEach-Object { node $_.FullName; if ($LASTEXITCODE) { throw "JavaScript test failed" } }
 .venv\Scripts\python.exe build_windows.py
 ```
 
-Результат: `release\YandexDiskProxy.exe` и `SHA256SUMS.txt`. Исходная версия хранит данные в `.local`. Python и mitmproxy включены в EXE; лицензии зависимостей находятся в сборке.
+Output: `release\YandexDiskProxy.exe` and `SHA256SUMS.txt`. Source runs store data in `.local`. The EXE includes Python, mitmproxy and dependency licences.
 
-Независимый инструмент, не продукт Яндекса. [MIT](LICENSE).
+Independent project, not a Yandex product. [MIT licence](LICENSE).

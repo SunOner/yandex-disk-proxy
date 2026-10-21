@@ -18,6 +18,7 @@ function element(id) {
   return elements.get(id);
 }
 const context = vm.createContext({
+  I18n: require("./i18n_stub.cjs")(),
   console, URLSearchParams, Intl, AbortSignal, queueMicrotask,
   setTimeout(){return 0;}, clearTimeout(){}, setInterval(){return 0;},
   document:{getElementById:element, querySelector(){return null;}, querySelectorAll(){return [];}, activeElement:null},

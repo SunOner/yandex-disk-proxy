@@ -1,109 +1,141 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en" data-i18n-ready="false">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Запросы и журнал — Диск</title>
+    <title data-i18n="Запросы и журнал — Yandex Disk Proxy">
+      Requests &amp; logs — Yandex Disk Proxy
+    </title>
     <link rel="stylesheet" href="/style.css" />
     <link rel="stylesheet" href="/requests.css" />
   </head>
   <body class="diagnostics-page">
     <header class="log-header">
-      <a href="/">← Диск</a>
-      <h1>Запросы и журнал</h1>
+      <a href="/">← Yandex Disk Proxy</a>
+      <h1 data-i18n="Запросы и журнал">Requests &amp; logs</h1>
       <button
         id="export"
         class="button"
-        title="Архив без токенов; пути и имена файлов сохраняются"
+        title="Archive without tokens; file names and paths are included"
+        data-i18n-title="Архив без токенов; пути и имена файлов сохраняются"
+        data-i18n="Скачать диагностику"
       >
-        Скачать диагностику
+        Download diagnostics
       </button>
-      <span id="connection" role="status">Подключение…</span>
+      <span id="connection" role="status" data-i18n-once="Подключение…"
+        >Connecting…</span
+      >
     </header>
     <div id="health" class="health"></div>
-    <nav class="log-tabs" aria-label="Журнал">
-      <button id="tab-requests" class="button active">Запросы</button>
-      <button id="tab-events" class="button">События</button>
-      <button id="tab-summary" class="button">Сводка операций</button>
+    <nav class="log-tabs" aria-label="Logs" data-i18n-aria-label="Журнал">
+      <button id="tab-requests" class="button active" data-i18n="Запросы">
+        Requests
+      </button>
+      <button id="tab-events" class="button" data-i18n="События">Events</button>
+      <button id="tab-summary" class="button" data-i18n="Сводка операций">
+        Operation summary
+      </button>
     </nav>
     <div class="log-tools">
       <input
         type="search"
         id="query"
-        aria-label="Поиск в журнале"
-        placeholder="Поиск"
+        aria-label="Search logs"
+        placeholder="Search"
+        data-i18n-placeholder="Поиск"
+        data-i18n-aria-label="Поиск в журнале"
       />
-      <select id="level" aria-label="Уровень">
-        <option value="all">Все</option>
-        <option value="errors">Ошибки</option>
-        <option value="unusual">Необычные</option>
+      <select id="level" aria-label="Level" data-i18n-aria-label="Уровень">
+        <option value="all" data-i18n="Все">All</option>
+        <option value="errors" data-i18n="Ошибки">Errors</option>
+        <option value="unusual" data-i18n="Необычные">Unusual</option>
       </select>
-      <select id="operation" aria-label="Тип операции">
-        <option value="">Все операции</option>
+      <select
+        id="operation"
+        aria-label="Operation type"
+        data-i18n-aria-label="Тип операции"
+      >
+        <option value="" data-i18n="Все операции">All operations</option>
       </select>
-      <select id="kind" aria-label="Протокол">
-        <option value="">Все протоколы</option>
+      <select id="kind" aria-label="Protocol" data-i18n-aria-label="Протокол">
+        <option value="" data-i18n="Все протоколы">All protocols</option>
         <option value="http">HTTP</option>
         <option value="tls">TLS</option>
-        <option value="connection">Соединения</option>
+        <option value="connection" data-i18n="Соединения">Connections</option>
         <option value="websocket">WebSocket</option>
-        <option value="file">Файлы Windows</option>
+        <option value="file" data-i18n="Файлы Windows">Windows files</option>
       </select>
-      <label><input id="pause" type="checkbox" /> Пауза обновления</label>
+      <label
+        ><input id="pause" type="checkbox" />
+        <span class="i18n-text" data-i18n="Пауза обновления"
+          >Pause updates</span
+        ></label
+      >
       <label id="mask-label"
-        ><input id="mask" type="checkbox" checked /> Скрывать токены</label
+        ><input id="mask" type="checkbox" checked />
+        <span class="i18n-text" data-i18n="Скрывать токены"
+          >Hide tokens</span
+        ></label
       >
     </div>
-    <p class="capture-note" id="capture-note">
-      Методы, URL, заголовки, соединения и изменения отметок хранения. Тела
-      запросов и файлов не записываются. Оригиналы заголовков — только в памяти.
+    <p
+      class="capture-note"
+      id="capture-note"
+      data-i18n="Методы, URL, заголовки, соединения и изменения отметок хранения. Тела запросов и файлов не записываются. Оригиналы заголовков — только в памяти."
+    >
+      Methods, URLs, headers, connections and offline selection changes. Request
+      and file bodies are not recorded. Original headers stay in memory only.
     </p>
     <section id="summary" hidden>
       <div class="metrics diagnostic-metrics">
         <article>
-          <span>HTTP ЗА ПЕРИОД</span><strong id="summary-total">0</strong
+          <span data-i18n="HTTP ЗА ПЕРИОД">HTTP IN PERIOD</span
+          ><strong id="summary-total">0</strong
           ><small id="summary-since"></small>
         </article>
         <article>
-          <span>ОШИБКИ HTTP</span><strong id="summary-errors">0</strong
+          <span data-i18n="ОШИБКИ HTTP">HTTP ERRORS</span
+          ><strong id="summary-errors">0</strong
           ><small id="summary-active"></small>
         </article>
         <article>
-          <span>ДРУГИЕ ОПЕРАЦИИ</span><strong id="summary-unknown">0</strong
+          <span data-i18n="ДРУГИЕ ОПЕРАЦИИ">OTHER OPERATIONS</span
+          ><strong id="summary-unknown">0</strong
           ><small id="summary-files"></small>
         </article>
         <article>
-          <span>ПРОПУСКИ ЗАХВАТА</span><strong id="summary-dropped">0</strong
+          <span data-i18n="ПРОПУСКИ ЗАХВАТА">CAPTURE DROPS</span
+          ><strong id="summary-dropped">0</strong
           ><small id="summary-retained"></small>
         </article>
       </div>
-      <h2>Операции</h2>
+      <h2 data-i18n="Операции">Operations</h2>
       <div class="summary-table">
         <table>
           <thead>
             <tr>
-              <th>Операция</th>
-              <th>Всего</th>
-              <th>Ошибки</th>
-              <th>Повторы после ошибки</th>
-              <th>Среднее / максимум</th>
-              <th>Отправлено / получено</th>
+              <th data-i18n="Операция">Operation</th>
+              <th data-i18n="Всего">Total</th>
+              <th data-i18n="Ошибки">Errors</th>
+              <th data-i18n="Повторы после ошибки">Retries after error</th>
+              <th data-i18n="Среднее / максимум">Average / maximum</th>
+              <th data-i18n="Отправлено / получено">Sent / received</th>
             </tr>
           </thead>
           <tbody id="operation-rows"></tbody>
         </table>
       </div>
-      <h2>Адреса запросов</h2>
+      <h2 data-i18n="Адреса запросов">Request endpoints</h2>
       <div class="summary-table">
         <table>
           <thead>
             <tr>
-              <th>Метод и адрес</th>
-              <th>Всего</th>
-              <th>Ошибки</th>
-              <th>Повторы</th>
-              <th>Среднее / максимум</th>
-              <th>Отправлено / получено</th>
+              <th data-i18n="Метод и адрес">Method and endpoint</th>
+              <th data-i18n="Всего">Total</th>
+              <th data-i18n="Ошибки">Errors</th>
+              <th data-i18n="Повторы">Retries</th>
+              <th data-i18n="Среднее / максимум">Average / maximum</th>
+              <th data-i18n="Отправлено / получено">Sent / received</th>
             </tr>
           </thead>
           <tbody id="endpoint-rows"></tbody>
@@ -111,41 +143,59 @@
       </div>
     </section>
     <div id="workspace" class="log-workspace">
-      <section class="log-list" aria-label="Записи журнала">
+      <section
+        class="log-list"
+        aria-label="Log records"
+        data-i18n-aria-label="Записи журнала"
+      >
         <div id="records"></div>
         <div class="log-pagination">
           <span id="count"></span
           ><button
             id="previous"
             class="button"
-            aria-label="Предыдущая страница"
+            aria-label="Previous page"
+            data-i18n-aria-label="Предыдущая страница"
           >
             ←</button
           ><button
             id="next-page"
             class="button"
-            aria-label="Следующая страница"
+            aria-label="Next page"
+            data-i18n-aria-label="Следующая страница"
           >
             →
           </button>
         </div>
       </section>
-      <section class="log-detail" aria-label="Детали записи">
-        <h2 id="detail-title">Выберите запись</h2>
+      <section
+        class="log-detail"
+        aria-label="Record details"
+        data-i18n-aria-label="Детали записи"
+      >
+        <h2 id="detail-title" data-i18n-once="Выберите запись">
+          Select a record
+        </h2>
         <pre id="original"></pre>
       </section>
     </div>
-    <footer class="log-footer">
-      До 5 000 записей и 32 МБ в памяти. Журналы: запросы — до 40 МБ, события —
-      до 8 МБ, сводка — до 2 МБ. Сводные счётчики сохраняются после ротации и
-      перезапуска.
+    <footer
+      class="log-footer"
+      data-i18n="До 5 000 записей и 32 МБ в памяти. Журналы: запросы — до 40 МБ, события — до 8 МБ, сводка — до 2 МБ. Сводные счётчики сохраняются после ротации и перезапуска."
+    >
+      Up to 5,000 records and 32 MB in memory. Logs: requests up to 40 MB,
+      events up to 8 MB, summary up to 2 MB. Aggregate counters survive rotation
+      and restart.
     </footer>
+    <div class="locale-switcher locale-floating" data-language-picker></div>
+    <script src="/i18n.js"></script>
     <script src="/list-motion.js"></script>
     <div
       id="toast-stack"
       class="toast-stack"
       role="region"
-      aria-label="Уведомления"
+      aria-label="Notifications"
+      data-i18n-aria-label="Уведомления"
     ></div>
     <script src="/toasts.js"></script>
     <script src="/requests.js"></script>

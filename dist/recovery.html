@@ -1,88 +1,134 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en" data-i18n-ready="false">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Прямые загрузки — Диск</title>
+    <title data-i18n="Прямые загрузки — Yandex Disk Proxy">
+      Direct downloads — Yandex Disk Proxy
+    </title>
     <link rel="stylesheet" href="/style.css" />
     <link rel="stylesheet" href="/requests.css" />
     <link rel="stylesheet" href="/recovery.css" />
   </head>
   <body class="diagnostics-page">
     <header class="log-header">
-      <a href="/">← Диск</a>
-      <h1>Прямые загрузки</h1>
-      <a href="/requests" target="_blank" rel="noopener">Запросы ↗</a
-      ><span id="connection" role="status">Подключение…</span>
+      <a href="/">← Yandex Disk Proxy</a>
+      <h1 data-i18n="Прямые загрузки">Direct downloads</h1>
+      <a href="/requests" target="_blank" rel="noopener" data-i18n="Запросы ↗"
+        >Requests ↗</a
+      ><span id="connection" role="status" data-i18n-once="Подключение…"
+        >Connecting…</span
+      >
     </header>
-    <p class="capture-note">
-      Только отмеченные для хранения файлы. Результат сохраняется отдельно;
-      размер и контрольная сумма проверяются. Загрузки браузера проверяйте
-      самостоятельно.
+    <p
+      class="capture-note"
+      data-i18n="Только отмеченные для хранения файлы. Результат сохраняется отдельно; размер и контрольная сумма проверяются. Загрузки браузера проверяйте самостоятельно."
+    >
+      Only files selected for offline storage. Downloads are saved separately
+      and verified by size and checksum. Browser downloads must be checked
+      separately.
     </p>
     <section class="metrics recovery-metrics">
       <article>
-        <span>ПРОВЕРЕНО</span><strong id="verified">0</strong
-        ><small id="verified-size">0 Б</small>
+        <span data-i18n="ПРОВЕРЕНО">VERIFIED</span
+        ><strong id="verified">0</strong
+        ><small id="verified-size" data-i18n-once="0 Б">0 B</small>
       </article>
       <article>
-        <span>ЗАГРУЖАЕТСЯ</span><strong id="active">0</strong
-        ><small id="speed">0 Б/с · до 4 файлов</small>
+        <span data-i18n="ЗАГРУЖАЕТСЯ">DOWNLOADING</span
+        ><strong id="active">0</strong
+        ><small id="speed" data-i18n-once="0 Б/с · до 4 файлов"
+          >0 B/s · up to 4 files</small
+        >
       </article>
       <article>
-        <span>ОЖИДАЮТ</span><strong id="waiting">0</strong
-        ><small id="session">Ожидание сессии Диска</small>
+        <span data-i18n="ОЖИДАЮТ">WAITING</span><strong id="waiting">0</strong
+        ><small id="session" data-i18n-once="Ожидание сессии Диска"
+          >Waiting for a Disk session</small
+        >
       </article>
       <article>
-        <span>ОШИБКИ</span><strong id="failed">0</strong
-        ><small id="network">Данные за 5 минут</small>
+        <span data-i18n="ОШИБКИ">ERRORS</span><strong id="failed">0</strong
+        ><small id="network" data-i18n-once="Данные за 5 минут"
+          >Last 5 minutes</small
+        >
       </article>
     </section>
     <div class="recovery-toolbar">
-      <button id="batch" class="button primary">Скачать оставшиеся</button
-      ><button id="pause-downloads" class="button">Приостановить</button
-      ><button id="cancel-downloads" class="button">Остановить загрузки</button
-      ><button id="folder" class="button">Открыть папку</button>
+      <button id="batch" class="button primary" data-i18n="Скачать оставшиеся">
+        Download remaining</button
+      ><button
+        id="pause-downloads"
+        class="button"
+        data-i18n-once="Приостановить"
+      >
+        Pause</button
+      ><button
+        id="cancel-downloads"
+        class="button"
+        data-i18n="Остановить загрузки"
+      >
+        Stop downloads</button
+      ><button id="folder" class="button" data-i18n="Открыть папку">
+        Open folder
+      </button>
     </div>
     <p id="destination" class="destination"></p>
     <div class="log-tools">
-      <button id="tab-queue" class="button active">Очередь загрузок</button
-      ><button id="tab-files" class="button">Файлы Диска</button
+      <button id="tab-queue" class="button active" data-i18n="Очередь загрузок">
+        Download queue</button
+      ><button id="tab-files" class="button" data-i18n="Файлы Диска">
+        Disk files</button
       ><input
         id="query"
         type="search"
-        placeholder="Имя или часть пути"
-        aria-label="Найти файл"
+        placeholder="Name or part of a path"
+        aria-label="Find a file"
+        data-i18n-placeholder="Имя или часть пути"
+        data-i18n-aria-label="Найти файл"
       />
     </div>
     <section class="recovery-table">
       <table>
         <thead>
           <tr>
-            <th>Файл</th>
-            <th>Состояние</th>
-            <th>Скачано / размер</th>
-            <th>Действия</th>
+            <th data-i18n="Файл">File</th>
+            <th data-i18n="Состояние">Status</th>
+            <th data-i18n="Скачано / размер">Downloaded / size</th>
+            <th data-i18n="Действия">Actions</th>
           </tr>
         </thead>
         <tbody id="rows"></tbody>
       </table>
-      <p id="empty" class="empty">Очередь пуста</p>
+      <p id="empty" class="empty" data-i18n="Очередь пуста">Queue is empty</p>
       <footer class="log-pagination">
         <span id="count"></span
-        ><button id="previous" class="button" aria-label="Предыдущая страница">
+        ><button
+          id="previous"
+          class="button"
+          aria-label="Previous page"
+          data-i18n-aria-label="Предыдущая страница"
+        >
           ←</button
-        ><button id="next-page" class="button" aria-label="Следующая страница">
+        ><button
+          id="next-page"
+          class="button"
+          aria-label="Next page"
+          data-i18n-aria-label="Следующая страница"
+        >
           →
         </button>
       </footer>
     </section>
     <dialog id="url-dialog">
       <form id="url-form">
-        <h2>Загрузка по URL</h2>
+        <h2 data-i18n="Загрузка по URL">Download from URL</h2>
         <p id="url-file" class="detail-path"></p>
-        <label class="field" for="download-url"
-          >Прямая HTTPS-ссылка загрузки Яндекса</label
+        <label
+          class="field"
+          for="download-url"
+          data-i18n="Прямая HTTPS-ссылка загрузки Яндекса"
+          >Direct Yandex HTTPS download URL</label
         ><input
           id="download-url"
           type="password"
@@ -90,24 +136,37 @@
           required
           placeholder="https://downloader.disk.yandex.ru/…"
         />
-        <p class="detail-note">
-          Ссылка используется только для выбранного файла. Проверка по
-          контрольной сумме из API. Адрес хранится в памяти до закрытия
-          приложения.
+        <p
+          class="detail-note"
+          data-i18n="Ссылка используется только для выбранного файла. Проверка по контрольной сумме из API. Адрес хранится в памяти до закрытия приложения."
+        >
+          The URL is used only for the selected file and checked against the API
+          checksum. It stays in memory until the application closes.
         </p>
         <p id="url-error" class="dialog-error" hidden></p>
         <div class="dialog-actions">
-          <button id="url-cancel" class="button" type="button">Отмена</button
-          ><button class="button primary" type="submit">Скачать</button>
+          <button
+            id="url-cancel"
+            class="button"
+            type="button"
+            data-i18n="Отмена"
+          >
+            Cancel</button
+          ><button class="button primary" type="submit" data-i18n="Скачать">
+            Download
+          </button>
         </div>
       </form>
     </dialog>
+    <div class="locale-switcher locale-floating" data-language-picker></div>
+    <script src="/i18n.js"></script>
     <script src="/list-motion.js"></script>
     <div
       id="toast-stack"
       class="toast-stack"
       role="region"
-      aria-label="Уведомления"
+      aria-label="Notifications"
+      data-i18n-aria-label="Уведомления"
     ></div>
     <script src="/toasts.js"></script>
     <script src="/recovery.js"></script>

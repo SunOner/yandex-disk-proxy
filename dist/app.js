@@ -2,15 +2,17 @@
 let snapshot = null,
   offset = 0,
   total = 0,
-  filter = "pending",
+  filter = I18n.preferences.get("fileFilter", "pending"),
   search = "",
   busy = false,
   refreshQueued = false,
   connected = false,
   visibleDownloads = 60,
   downloadedTotal = null;
+let lastRows = null,
+  detailRow = null;
 const $ = (id) => document.getElementById(id);
-const labels = {
+const labels = I18n.labels({
   waiting: "Ожидает",
   local: "На компьютере",
   requesting: "Запрос ссылки",
@@ -21,18 +23,18 @@ const labels = {
   restoring: "Возврат в очередь",
   cooldown: "Пауза повторов",
   error: "Ошибка",
-};
+});
 function bytes(n) {
   n = Number(n) || 0;
-  if (n < 1024) return n + " Б";
-  let units = ["КБ", "МБ", "ГБ", "ТБ"],
+  if (n < 1024) return n + I18n.t(" Б");
+  let units = [I18n.t("КБ"), I18n.t("МБ"), I18n.t("ГБ"), I18n.t("ТБ")],
     i = -1;
   do {
     n /= 1024;
     i++;
   } while (n >= 1024 && i < units.length - 1);
   return (
-    new Intl.NumberFormat("ru", {
+    new Intl.NumberFormat(I18n.locale, {
       maximumFractionDigits: n < 10 ? 1 : 0,
     }).format(n) +
     " " +
@@ -40,7 +42,7 @@ function bytes(n) {
   );
 }
 function number(n) {
-  return new Intl.NumberFormat("ru").format(n || 0);
+  return new Intl.NumberFormat(I18n.locale).format(n || 0);
 }
 function node(tag, cls, text) {
   const e = document.createElement(tag);
@@ -52,14 +54,14 @@ function toast(text, type = "error") {
   const dialog = document.querySelector("dialog[open]");
   const error = type === "error" && dialog?.querySelector(".dialog-error");
   if (error) {
-    error.textContent = text;
+    error.textContent = I18n.t(text);
     error.hidden = false;
     return;
   }
   Toasts.show(text, { type });
 }
 async function action(path, data = {}) {
-  if (!snapshot || !connected) throw new Error("Нет связи с панелью");
+  if (!snapshot || !connected) throw new Error(I18n.t("Нет связи с панелью"));
   const r = await fetch(path, {
     method: "POST",
     headers: {
@@ -69,7 +71,7 @@ async function action(path, data = {}) {
     body: JSON.stringify(data),
   });
   const value = await r.json();
-  if (!r.ok) throw new Error(value.error || "Ошибка действия");
+  if (!r.ok) throw new Error(I18n.t(value.error) || I18n.t("Ошибка действия"));
   return value;
 }
 function sessionView(s) {
@@ -79,28 +81,30 @@ function sessionView(s) {
   $("session-led").className =
     "session-led" + (active ? " active" : working ? " working" : "");
   $("session-title").textContent = active
-    ? "Прокси включён"
+    ? I18n.t("Прокси включён")
     : phase === "starting"
-      ? "Запуск прокси"
+      ? I18n.t("Запуск прокси")
       : phase === "stopping"
-        ? "Восстанавливается клиент"
+        ? I18n.t("Восстанавливается клиент")
         : phase === "cleanup_required"
-          ? "Ошибка восстановления"
-          : "Прокси выключен";
+          ? I18n.t("Ошибка восстановления")
+          : I18n.t("Прокси выключен");
   $("start").disabled = active || working;
   $("settings").disabled = active || working;
   $("rescan").disabled = !!s.inventory?.scanning || !s.configured;
   $("rescan").textContent = s.inventory?.scanning
-    ? "Обновление списка…"
-    : "Обновить список";
+    ? I18n.t("Обновление списка…")
+    : I18n.t("Обновить список");
   $("rescan").title = s.inventory?.updated_at
-    ? "Последнее обновление: " +
-      new Date(s.inventory.updated_at * 1000).toLocaleTimeString("ru-RU") +
-      ". Автоматически каждые 10 секунд."
-    : "Проверить отметки хранения в Windows";
+    ? I18n.t("Последнее обновление: ") +
+      new Date(s.inventory.updated_at * 1000).toLocaleTimeString(I18n.locale) +
+      I18n.t(". Автоматически каждые 10 секунд.")
+    : I18n.t("Проверить отметки хранения в Windows");
   $("mode").disabled = working;
   $("start").textContent =
-    phase === "cleanup_required" ? "↺ Восстановить" : "▶ Включить прокси";
+    phase === "cleanup_required"
+      ? I18n.t("↺ Восстановить")
+      : I18n.t("▶ Включить прокси");
   $("stop").disabled = !(active || phase === "starting");
   if (document.activeElement !== $("mode")) $("mode").value = s.mode;
   const clientScope = s.session.certificate_scope === "client";
@@ -120,56 +124,58 @@ function sessionView(s) {
   $("tls-warning").hidden = !problem;
   $("tls-message").textContent = missing
     ? clientScope
-      ? "Файл сертификата Диска недоступен или изменён."
-      : "Сертификат больше не находится в доверенных Windows."
+      ? I18n.t("Файл сертификата Диска недоступен или изменён.")
+      : I18n.t("Сертификат больше не находится в доверенных Windows.")
     : clientError
-      ? "Диск отклонил TLS-соединение. Причина — в журнале."
+      ? I18n.t("Диск отклонил TLS-соединение. Причина — в журнале.")
       : upstreamError
-        ? "Ошибка TLS между прокси и Яндексом. Причина — в журнале."
-        : s.log_error || s.session.error_detail || "";
+        ? I18n.t("Ошибка TLS между прокси и Яндексом. Причина — в журнале.")
+        : I18n.t(s.log_error || s.session.error_detail) || "";
   $("repair-ca").hidden = !missing || clientScope;
   $("restart-client").hidden = !clientError || missing;
 }
-function showDetails(row) {
+function showDetails(row, open = true) {
+  detailRow = row;
   $("detail-name").textContent = row.name;
   $("detail-path").textContent = row.path;
   const list = $("detail-values");
   list.replaceChildren();
   const values = [
-    ["Состояние", labels[row.status] || row.status],
-    ["Размер", bytes(row.size)],
+    [I18n.t("Состояние"), labels[row.status] || row.status],
+    [I18n.t("Размер"), bytes(row.size)],
     [
-      "Загрузка подтверждена",
+      I18n.t("Загрузка подтверждена"),
       row.downloaded_at
-        ? new Date(row.downloaded_at).toLocaleString("ru-RU")
-        : "Нет данных",
+        ? new Date(row.downloaded_at).toLocaleString(I18n.locale)
+        : I18n.t("Нет данных"),
     ],
     [
-      "Подключение при завершении",
+      I18n.t("Подключение при завершении"),
       row.downloaded_at
         ? row.downloaded_via_proxy === null
-          ? "Между запусками панели"
+          ? I18n.t("Между запусками панели")
           : row.downloaded_via_proxy
-            ? "Через прокси"
-            : "Напрямую"
+            ? I18n.t("Через прокси")
+            : I18n.t("Напрямую")
         : "—",
     ],
-    ["Подтверждено Windows", bytes(row.validated)],
-    ["Передано по сети", bytes(row.network_bytes)],
-    ["Запросов ссылки", number(row.attempts)],
-    ["Ответов HTTP 500", number(row.http500)],
-    ["Повторов ограничено", number(row.blocked)],
-    ["Последний сервер", row.last_host || "—"],
-    ["Ответ API ссылки", row.api_http || "—"],
-    ["HTTP выдачи файла", row.download_http || "—"],
-    ["Последнее событие", row.last_time || "—"],
+    [I18n.t("Подтверждено Windows"), bytes(row.validated)],
+    [I18n.t("Передано по сети"), bytes(row.network_bytes)],
+    [I18n.t("Запросов ссылки"), number(row.attempts)],
+    [I18n.t("Ответов HTTP 500"), number(row.http500)],
+    [I18n.t("Повторов ограничено"), number(row.blocked)],
+    [I18n.t("Последний сервер"), row.last_host || "—"],
+    [I18n.t("Ответ API ссылки"), row.api_http || "—"],
+    [I18n.t("HTTP выдачи файла"), row.download_http || "—"],
+    [I18n.t("Последнее событие"), row.last_time || "—"],
   ];
   for (const [title, value] of values) {
     list.append(node("dt", "", title), node("dd", "", value));
   }
-  $("details").showModal();
+  if (open) $("details").showModal();
 }
 function renderRows(data) {
+  lastRows = data;
   total = data.total;
   offset = data.offset;
   const body = $("files");
@@ -206,8 +212,9 @@ function renderRows(data) {
       "http" + (contentCode >= 400 ? " bad" : ""),
       contentCode || "—",
     );
-    code.title = "API ссылки: " + (row.api_http || "—");
-    if (row.blocked) code.title = "Локальных ответов 503: " + row.blocked;
+    code.title = I18n.t("API ссылки: ") + (row.api_http || "—");
+    if (row.blocked)
+      code.title = I18n.t("Локальных ответов 503: ") + row.blocked;
     tr.append(code, node("td", "num", row.attempts || "—"));
     const size = node("td");
     size.append(
@@ -230,15 +237,20 @@ function renderRows(data) {
       const time = node("time", "download-time");
       time.dateTime = row.downloaded_at;
       time.title =
-        "Загрузка подтверждена Windows: " + completed.toLocaleString("ru-RU");
+        I18n.t("Загрузка подтверждена Windows: ") +
+        completed.toLocaleString(I18n.locale);
       time.append(
-        node("span", "", completed.toLocaleTimeString("ru-RU")),
-        node("span", "download-date", completed.toLocaleDateString("ru-RU")),
+        node("span", "", completed.toLocaleTimeString(I18n.locale)),
+        node(
+          "span",
+          "download-date",
+          completed.toLocaleDateString(I18n.locale),
+        ),
       );
       actions.append(time);
     }
     if (filter !== "downloaded" && row.status !== "local") {
-      const direct = node("a", "row-action", "Скачать…");
+      const direct = node("a", "row-action", I18n.t("Скачать…"));
       direct.href = "/recovery?" + new URLSearchParams({ q: row.path });
       direct.target = "_blank";
       direct.rel = "noopener";
@@ -250,10 +262,10 @@ function renderRows(data) {
       row.status !== "local"
     ) {
       if (row.status === "deferred") {
-        const retry = node("button", "row-action", "Повторить");
+        const retry = node("button", "row-action", I18n.t("Повторить"));
         retry.addEventListener("click", () =>
           action("/api/retry", { file: row.path })
-            .then(() => toast("Файл возвращается в очередь", "success"))
+            .then(() => toast(I18n.t("Файл возвращается в очередь"), "success"))
             .catch((e) => toast(e.message)),
         );
         actions.append(retry);
@@ -261,10 +273,10 @@ function renderRows(data) {
         row.http500 > 0 &&
         !["deferring", "restoring"].includes(row.status)
       ) {
-        const defer = node("button", "row-action", "Отложить");
+        const defer = node("button", "row-action", I18n.t("Отложить"));
         defer.addEventListener("click", () =>
           action("/api/defer", { file: row.path })
-            .then(() => toast("Отправлен запрос Windows", "info"))
+            .then(() => toast(I18n.t("Отправлен запрос Windows"), "info"))
             .catch((e) => toast(e.message)),
         );
         actions.append(defer);
@@ -278,18 +290,21 @@ function renderRows(data) {
   const recent = filter === "downloaded";
   $("pagination-label").textContent = total
     ? recent
-      ? "Показано " + number(data.rows.length) + " из " + number(total)
+      ? I18n.t("Показано ") +
+        number(data.rows.length) +
+        I18n.t(" из ") +
+        number(total)
       : number(offset + 1) +
         "–" +
         number(Math.min(offset + data.rows.length, total)) +
-        " из " +
+        I18n.t(" из ") +
         number(total)
-    : "Файлов нет";
+    : I18n.t("Файлов нет");
   $("prev").disabled = offset === 0;
   $("next").disabled = offset + data.rows.length >= total;
   $("load-more").hidden = !recent || data.rows.length >= total;
   $("load-more").disabled = !connected;
-  $("load-more").textContent = "Показать ещё";
+  $("load-more").textContent = I18n.t("Показать ещё");
 }
 function renderEvents(events) {
   const target = $("events");
@@ -298,14 +313,68 @@ function renderEvents(events) {
     const row = node("div", "event " + item.event);
     row.append(
       node("div", "event-time", item.time),
-      node("div", "event-msg", item.message),
+      node("div", "event-msg", I18n.t(item.message)),
     );
     if (item.file) row.append(node("div", "event-file", item.file));
     row.classList.add(item.level || "info");
-    row.title = [item.reason, item.detail].filter(Boolean).join("\n");
+    row.title = [I18n.t(item.reason), I18n.t(item.detail)]
+      .filter(Boolean)
+      .join("\n");
     entries.push({ key: item.id, node: row });
   }
   ListMotion.render(target, entries);
+}
+function renderMetrics(state, fresh = true) {
+  $("nav-count").textContent = number(state.pending);
+  $("metric-size").textContent =
+    bytes(state.pending_bytes) + I18n.t(" осталось сохранить");
+  $("metric-local").textContent =
+    I18n.t("Всего на ПК: ") + number(state.counts.local);
+  const d = state.downloads;
+  $("nav-downloaded").textContent = number(d.count);
+  $("metric-downloaded-size").textContent =
+    bytes(d.bytes) +
+    I18n.t(" · с ") +
+    new Date(d.since).toLocaleString(I18n.locale, {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  MeterBoard.update(
+    {
+      pending: {
+        text: number(state.pending),
+        value: state.pending,
+        detail: $("metric-size").textContent,
+      },
+      downloaded: {
+        text: number(d.count),
+        value: d.count,
+        detail:
+          $("metric-downloaded-size").textContent +
+          " · " +
+          $("metric-local").textContent,
+      },
+      errors: {
+        text: number(state.counters.http500),
+        value: state.counters.http500 || 0,
+        detail: I18n.t("Ответы Яндекса за запуск панели"),
+      },
+      deferred: {
+        text: number(state.counts.deferred),
+        value: state.counts.deferred || 0,
+        detail: I18n.t("Временно снята отметка хранения"),
+      },
+      network: {
+        text: bytes(state.counters.network_bytes),
+        value: state.counters.network_bytes || 0,
+        detail: I18n.t("Учтённые потоки, включая повторы"),
+      },
+    },
+    $("session-title").textContent,
+    fresh,
+  );
 }
 async function refresh() {
   if (busy) {
@@ -325,61 +394,13 @@ async function refresh() {
     const response = await fetch("/api/state", {
       signal: AbortSignal.timeout(10000),
     });
-    if (!response.ok) throw new Error("Панель недоступна");
+    if (!response.ok) throw new Error(I18n.t("Панель недоступна"));
     snapshot = await response.json();
     connected = true;
     sessionView(snapshot);
-    $("nav-count").textContent = number(snapshot.pending);
-    $("metric-size").textContent =
-      bytes(snapshot.pending_bytes) + " осталось сохранить";
-    $("metric-local").textContent =
-      "Всего на ПК: " + number(snapshot.counts.local);
-    const d = snapshot.downloads;
-    $("nav-downloaded").textContent = number(d.count);
-    $("metric-downloaded-size").textContent =
-      bytes(d.bytes) +
-      " · с " +
-      new Date(d.since).toLocaleString("ru-RU", {
-        day: "2-digit",
-        month: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    MeterBoard.update(
-      {
-        pending: {
-          text: number(snapshot.pending),
-          value: snapshot.pending,
-          detail: $("metric-size").textContent,
-        },
-        downloaded: {
-          text: number(d.count),
-          value: d.count,
-          detail:
-            $("metric-downloaded-size").textContent +
-            " · " +
-            $("metric-local").textContent,
-        },
-        errors: {
-          text: number(snapshot.counters.http500),
-          value: snapshot.counters.http500 || 0,
-          detail: "Ответы Яндекса за запуск панели",
-        },
-        deferred: {
-          text: number(snapshot.counts.deferred),
-          value: snapshot.counts.deferred || 0,
-          detail: "Временно снята отметка хранения",
-        },
-        network: {
-          text: bytes(snapshot.counters.network_bytes),
-          value: snapshot.counters.network_bytes || 0,
-          detail: "Учтённые потоки, включая повторы",
-        },
-      },
-      $("session-title").textContent,
-    );
+    renderMetrics(snapshot);
     $("root-path").textContent =
-      snapshot.root || "Папка синхронизации ещё не выбрана";
+      snapshot.root || I18n.t("Папка синхронизации ещё не выбрана");
     renderEvents(snapshot.events);
     const params = new URLSearchParams({
       q: requested[1],
@@ -390,7 +411,8 @@ async function refresh() {
     const responseFiles = await fetch("/api/files?" + params, {
       signal: AbortSignal.timeout(10000),
     });
-    if (!responseFiles.ok) throw new Error("Не удалось получить список файлов");
+    if (!responseFiles.ok)
+      throw new Error(I18n.t("Не удалось получить список файлов"));
     const data = await responseFiles.json();
     Toasts.problem("connection", "");
     if (
@@ -421,9 +443,9 @@ async function refresh() {
     MeterBoard.setConnected(false);
     Toasts.problem(
       "connection",
-      "Не удалось обновить список файлов. " + e.message,
+      I18n.t("Не удалось обновить список файлов. ") + e.message,
     );
-    $("session-title").textContent = "Нет связи с панелью";
+    $("session-title").textContent = I18n.t("Нет связи с панелью");
     $("session-led").className = "session-led offline";
     for (const id of [
       "start",
@@ -434,7 +456,7 @@ async function refresh() {
       "load-more",
     ])
       $(id).disabled = true;
-    $("load-more").textContent = "Показать ещё";
+    $("load-more").textContent = I18n.t("Показать ещё");
   } finally {
     busy = false;
     if (refreshQueued) {
@@ -443,33 +465,40 @@ async function refresh() {
     }
   }
 }
-function setFilter(value) {
-  filter = value;
-  offset = 0;
-  visibleDownloads = 60;
-  downloadedTotal = null;
-  $("page-controls").hidden = value === "downloaded";
-  $("load-more").hidden = true;
-  $("downloaded-heading").textContent = value === "downloaded" ? "Скачано" : "";
-  $("file-table").classList.toggle("downloaded-view", value === "downloaded");
-  $("filter").value = value;
-  $("files").replaceChildren();
-  const titles = {
+function renderListHeader() {
+  const titles = I18n.labels({
     pending: "Очередь загрузки",
     errors: "Файлы с ошибками 500",
     deferred: "Отложенные файлы",
     local: "Файлы на компьютере",
     downloaded: "Новые загрузки",
     all: "Все отмеченные файлы",
-  };
-  $("list-title").textContent = titles[value];
+  });
+  $("list-title").textContent = titles[filter];
   $("list-description").textContent =
-    value === "downloaded"
-      ? "Скачанные после начала наблюдения"
-      : "Файлы с отметкой «Хранить на компьютере»";
+    filter === "downloaded"
+      ? I18n.t("Скачанные после начала наблюдения")
+      : I18n.t("Файлы с отметкой «Хранить на компьютере»");
   document
     .querySelectorAll(".nav[data-filter]")
-    .forEach((e) => e.classList.toggle("active", e.dataset.filter === value));
+    .forEach((e) => e.classList.toggle("active", e.dataset.filter === filter));
+  $("downloaded-heading").textContent =
+    filter === "downloaded" ? I18n.t("Скачано") : "";
+}
+function setFilter(value) {
+  I18n.preferences.set("fileFilter", value);
+  filter = value;
+  offset = 0;
+  visibleDownloads = 60;
+  downloadedTotal = null;
+  $("page-controls").hidden = value === "downloaded";
+  $("load-more").hidden = true;
+  $("downloaded-heading").textContent =
+    value === "downloaded" ? I18n.t("Скачано") : "";
+  $("file-table").classList.toggle("downloaded-view", value === "downloaded");
+  $("filter").value = value;
+  $("files").replaceChildren();
+  renderListHeader();
   refresh();
 }
 $("filter").addEventListener("change", (e) => setFilter(e.target.value));
@@ -500,13 +529,13 @@ $("next").addEventListener("click", () => {
 $("load-more").addEventListener("click", () => {
   if (filter !== "downloaded" || !connected || busy) return;
   visibleDownloads += 60;
-  $("load-more").textContent = "Загрузка…";
+  $("load-more").textContent = I18n.t("Загрузка…");
   refresh();
 });
 $("mode").addEventListener("change", (e) =>
   action("/api/config", { mode: e.target.value })
     .then(() => {
-      toast("Режим изменён.", "success");
+      toast(I18n.t("Режим изменён."), "success");
       return refresh();
     })
     .catch((e) => toast(e.message)),
@@ -515,7 +544,7 @@ $("rescan").addEventListener("click", async () => {
   $("rescan").disabled = true;
   try {
     await action("/api/rescan");
-    toast("Обновление списка запрошено", "success");
+    toast(I18n.t("Обновление списка запрошено"), "success");
     await refresh();
   } catch (e) {
     toast(e.message);
@@ -541,10 +570,11 @@ for (const [button, input, kind] of [
   $(button).addEventListener("click", async () => {
     const controls = ["browse-root", "browse-client", "setup-cancel"];
     controls.forEach((id) => ($(id).disabled = true));
-    $(button).textContent = "Выберите в Windows…";
+    $(button).textContent = I18n.t("Выберите в Windows…");
     try {
       const result = await action("/api/browse", {
         kind,
+        language: I18n.language,
         initial: $(input).value,
       });
       if (result.path) $(input).value = result.path;
@@ -552,7 +582,7 @@ for (const [button, input, kind] of [
       toast(error.message);
     } finally {
       controls.forEach((id) => ($(id).disabled = false));
-      $(button).textContent = "Обзор…";
+      $(button).textContent = I18n.t("Обзор…");
     }
   });
 }
@@ -564,7 +594,10 @@ for (const [id, path] of [
     $(id).disabled = true;
     try {
       await action(path);
-      toast("Команда отправлена. Результат появится в журнале.", "info");
+      toast(
+        I18n.t("Команда отправлена. Результат появится в журнале."),
+        "info",
+      );
     } catch (error) {
       toast(error.message);
     } finally {
@@ -582,7 +615,7 @@ $("setup-form").addEventListener("submit", async (event) => {
       client: $("setup-client").value,
     });
     $("setup-dialog").close();
-    toast("Настройки сохранены.", "success");
+    toast(I18n.t("Настройки сохранены."), "success");
     await refresh();
   } catch (error) {
     toast(error.message);
@@ -623,7 +656,7 @@ $("consent-start").addEventListener("click", async () => {
       accepted_thumbprint: snapshot.certificate_thumbprint,
     });
     $("consent-dialog").close();
-    toast("Запуск прокси.", "info");
+    toast(I18n.t("Запуск прокси."), "info");
     await refresh();
   } catch (error) {
     toast(error.message);
@@ -634,11 +667,26 @@ $("stop").addEventListener("click", async () => {
   try {
     $("stop").disabled = true;
     await action("/api/stop");
-    toast("Остановка и восстановление запущены.", "info");
+    toast(I18n.t("Остановка и восстановление запущены."), "info");
     await refresh();
   } catch (e) {
     toast(e.message);
   }
 });
-refresh();
+I18n.onChange(() => {
+  renderListHeader();
+  if (snapshot) {
+    if (connected) sessionView(snapshot);
+    else $("session-title").textContent = I18n.t("Нет связи с панелью");
+    renderMetrics(snapshot, false);
+    renderEvents(snapshot.events);
+    if (lastRows) renderRows(lastRows);
+    $("root-path").textContent =
+      snapshot.root || I18n.t("Папка синхронизации ещё не выбрана");
+  }
+  for (const id of ["setup-error", "consent-error"])
+    $(id).textContent = I18n.t($(id).textContent);
+  if ($("details").open && detailRow) showDetails(detailRow, false);
+});
+setFilter(filter);
 setInterval(refresh, 2000);

@@ -2,13 +2,26 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import settings
+import windows_ui
 
 
 class LocalSettings(unittest.TestCase):
+    def test_picker_passes_only_supported_language_in_environment(self):
+        with patch.object(
+            windows_ui.runtime,
+            "external_run",
+            return_value=SimpleNamespace(returncode=0, stdout='{"path":null}'),
+        ) as run:
+            for language, expected in (("ru", "ru"), ("en", "en"), ("unexpected", "en")):
+                self.assertIsNone(windows_ui.choose("folder", "C:\\test", language))
+                self.assertEqual(run.call_args.kwargs["env"]["YDP_PICK_LANGUAGE"], expected)
+                self.assertEqual(run.call_args.kwargs["env"]["YDP_PICK_INITIAL"], "C:\\test")
+
     def test_multiple_accounts_require_explicit_root_selection(self):
         with (
             patch.object(settings, "read", return_value={}),

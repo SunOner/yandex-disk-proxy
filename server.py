@@ -753,7 +753,8 @@ class Model:
         with self.lock:
             counts = collections.Counter(row["status"] for row in self.files.values())
             return {
-                "app": "disk-mitm-panel",
+                "app": runtime.APP_ID,
+                "product_name": runtime.PRODUCT_NAME,
                 "version": runtime.VERSION,
                 "frozen": runtime.FROZEN,
                 "data_directory": str(settings.LOCAL),
@@ -974,6 +975,7 @@ class Handler(BaseHTTPRequestHandler):
             "/list-motion.js": ("list-motion.js", "text/javascript; charset=utf-8"),
             "/toasts.js": ("toasts.js", "text/javascript; charset=utf-8"),
             "/meters.js": ("meters.js", "text/javascript; charset=utf-8"),
+            "/i18n.js": ("i18n.js", "text/javascript; charset=utf-8"),
             "/style.css": ("style.css", "text/css; charset=utf-8"),
             "/requests": ("requests.html", "text/html; charset=utf-8"),
             "/requests.js": ("requests.js", "text/javascript; charset=utf-8"),
@@ -1040,7 +1042,9 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/browse":
                 if ACTIVE.session().get("phase") not in ("idle", "stopped"):
                     raise ValueError("Сначала остановите прокси")
-                selected = windows_ui.choose(data.get("kind"), data.get("initial", ""))
+                selected = windows_ui.choose(
+                    data.get("kind"), data.get("initial", ""), data.get("language", "en")
+                )
                 self.reply(200, {"path": selected})
                 return
             elif self.path == "/api/request-detail":
@@ -1051,7 +1055,9 @@ class Handler(BaseHTTPRequestHandler):
                     200,
                     reports.bundle(ACTIVE),
                     "application/zip",
-                    {"Content-Disposition": 'attachment; filename="yandex-disk-diagnostics.zip"'},
+                    {
+                        "Content-Disposition": 'attachment; filename="yandex-disk-proxy-diagnostics.zip"'
+                    },
                 )
                 return
             elif self.path == "/api/rescan":
@@ -1111,10 +1117,10 @@ def main():
     try:
         with urllib.request.urlopen(URL + "/api/state", timeout=0.7) as response:
             existing = json.load(response)
-        if existing.get("app") == "disk-mitm-panel":
+        if existing.get("app") in (runtime.APP_ID, "disk-mitm-panel"):
             if not args.no_browser:
                 webbrowser.open(URL)
-            print("Панель уже запущена: " + URL, flush=True)
+            print("Panel is already running: " + URL, flush=True)
             return 20
     except Exception:
         pass
@@ -1131,14 +1137,18 @@ def main():
                 if previous.get("phase") != "stopped":
                     unresolved.append(saved.parent)
         except (OSError, ValueError):
-            print("Нужно проверить восстановление предыдущего сеанса.", flush=True)
+            print("The previous session needs recovery.", flush=True)
     ACTIVE = Model()
     if unresolved:
         ACTIVE.directory = unresolved[-1]
     threading.Thread(target=ACTIVE.monitor, daemon=True).start()
     threading.Thread(target=ACTIVE.inventory_loop, daemon=True).start()
     print(
-        "\nЯНДЕКС ДИСК · ПРОКСИ\n" + URL + "\nCtrl+C: остановить прокси и восстановить клиент.\n",
+        "\n"
+        + runtime.PRODUCT_NAME
+        + "\n"
+        + URL
+        + "\nCtrl+C: stop the proxy and restore the client.\n",
         flush=True,
     )
     if not args.no_browser:
@@ -1162,11 +1172,11 @@ def main():
             try:
                 ACTIVE.worker.wait(timeout=35)
             except subprocess.TimeoutExpired:
-                print("Восстановление ещё выполняется отдельным процессом.", flush=True)
+                print("Recovery is still running in a separate process.", flush=True)
         try:
             ACTIVE.traffic.flush(force=True)
         except OSError:
-            print("Не удалось сохранить сводку диагностики.", flush=True)
+            print("Could not save the diagnostics summary.", flush=True)
         server.server_close()
 
 

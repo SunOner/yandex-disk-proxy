@@ -36,19 +36,19 @@ def main():
             time.sleep(1)
         session = current["session"]
         if session["phase"] == "idle":
-            print("Прокси выключен.")
+            print("Proxy stopped.")
             return 0
         if (
             session["phase"] == "stopped"
             and session.get("ca_removed")
             and not session.get("restore_failures")
         ):
-            print("Прокси выключен. Сертификат удалён, отметки хранения восстановлены.")
+            print("Proxy stopped. Certificate cleanup and keep-on-PC restoration completed.")
             return 0
-        print("Проверьте восстановление: " + url)
+        print("Check recovery: " + url)
         return 1
     except (OSError, ValueError, KeyError):
-        print("Панель недоступна. Запустите восстановление с параметром --recover.")
+        print("Panel unavailable. Run recovery with --recover.")
         return 1
 
 

@@ -21,10 +21,10 @@ const MeterBoard = (() => {
       if (!allowMotion) state.slots.forEach((slot) => slot.animation?.finish());
       return;
     }
-    const parts = text.match(/^(.*?)(?:\s+(Б|КБ|МБ|ГБ|ТБ))?$/u);
+    const parts = text.match(/^(.*?)(?:\s+(Б|КБ|МБ|ГБ|ТБ|B|KB|MB|GB|TB))?$/u);
     const number = parts[1],
       unit = parts[2] || "";
-    const precision = (number.split(",")[1] || "").length;
+    const precision = (number.split(I18n.decimal)[1] || "").length;
     const animate =
       !!state &&
       state.unit === unit &&
@@ -135,24 +135,34 @@ const MeterBoard = (() => {
   function setConnected(value) {
     connected = value;
     $("board-status").textContent = connected
-      ? status || "Ожидание данных"
-      : "Нет связи с панелью";
-    $("board-status").classList.toggle("inactive", status !== "Прокси включён");
+      ? status || I18n.t("Ожидание данных")
+      : I18n.t("Нет связи с панелью");
+    $("board-status").classList.toggle(
+      "inactive",
+      status !== I18n.t("Прокси включён"),
+    );
     $("board-status").classList.toggle("disconnected", !connected);
     $("board-updated").textContent = updated
-      ? (connected ? "Обновлено в " : "Последнее обновление в ") +
-        updated.toLocaleTimeString("ru-RU")
-      : "Ожидание данных";
+      ? (connected
+          ? I18n.t("Обновлено в ")
+          : I18n.t("Последнее обновление в ")) +
+        updated.toLocaleTimeString(I18n.locale)
+      : I18n.t("Ожидание данных");
   }
 
-  function update(metrics, phase) {
+  function update(metrics, phase, fresh = true) {
     latest = metrics;
     status = phase;
-    updated = new Date();
+    if (fresh) updated = new Date();
     for (const [key, metric] of Object.entries(metrics))
-      paint($("metric-" + key), metric.text, metric.value, board.hidden);
-    if (!board.hidden) drawBoard(true);
-    setConnected(true);
+      paint(
+        $("metric-" + key),
+        metric.text,
+        metric.value,
+        fresh && board.hidden,
+      );
+    if (!board.hidden) drawBoard(fresh);
+    setConnected(fresh ? true : connected);
   }
 
   function finishClose() {
@@ -172,7 +182,7 @@ const MeterBoard = (() => {
         await document.exitFullscreen();
       } catch {
         if (document.fullscreenElement === board) {
-          $("board-mode").textContent = "Для выхода нажмите Esc";
+          $("board-mode").textContent = I18n.t("Для выхода нажмите Esc");
           return;
         }
       }
@@ -193,7 +203,7 @@ const MeterBoard = (() => {
       element.inert = true;
     });
     $("open-board").setAttribute("aria-expanded", "true");
-    $("board-mode").textContent = "Esc — вернуться к файлам";
+    $("board-mode").textContent = I18n.t("Esc — вернуться к файлам");
     drawBoard(false);
     setConnected(connected);
     $("close-board").focus({ preventScroll: true });
@@ -206,15 +216,20 @@ const MeterBoard = (() => {
           },
           () => {
             if (!board.hidden)
-              $("board-mode").textContent =
-                "Табло в окне браузера · Esc — вернуться";
+              $("board-mode").textContent = I18n.t(
+                "Табло в окне браузера · Esc — вернуться",
+              );
           },
         );
       } catch {
-        $("board-mode").textContent = "Табло в окне браузера · Esc — вернуться";
+        $("board-mode").textContent = I18n.t(
+          "Табло в окне браузера · Esc — вернуться",
+        );
       }
     } else
-      $("board-mode").textContent = "Табло в окне браузера · Esc — вернуться";
+      $("board-mode").textContent = I18n.t(
+        "Табло в окне браузера · Esc — вернуться",
+      );
   }
 
   $("open-board").addEventListener("click", open);
@@ -225,8 +240,18 @@ const MeterBoard = (() => {
       close();
     }
     if (event.key === "Tab") {
-      event.preventDefault();
-      $("close-board").focus();
+      const controls = Array.from(
+        board.querySelectorAll("button:not([disabled])"),
+      ).filter((button) => button.tabIndex >= 0 && !button.closest("[hidden]"));
+      const first = controls[0],
+        last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
   });
   document.addEventListener("fullscreenchange", () => {
@@ -235,6 +260,11 @@ const MeterBoard = (() => {
       nativeEntered = false;
       finishClose();
     }
+  });
+  I18n.onChange(() => {
+    status = I18n.t(status);
+    setConnected(connected);
+    $("board-mode").textContent = I18n.t($("board-mode").textContent);
   });
   return { update, setConnected, open, close };
 })();

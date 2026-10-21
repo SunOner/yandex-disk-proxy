@@ -61,8 +61,9 @@ public static class YdpFolderPicker {
             uint options;
             dialog.GetOptions(out options);
             dialog.SetOptions(options | 0x20 | 0x40 | 0x800 | 0x02000000);
-            dialog.SetTitle("Выберите папку Яндекс Диска");
-            dialog.SetOkButtonLabel("Выбрать папку");
+            bool russian = Environment.GetEnvironmentVariable("YDP_PICK_LANGUAGE") == "ru";
+            dialog.SetTitle(russian ? "Выберите папку Яндекс Диска" : "Select the Yandex Disk folder");
+            dialog.SetOkButtonLabel(russian ? "Выбрать папку" : "Select folder");
             if (Directory.Exists(initial)) {
                 var iid = new Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe");
                 SHCreateItemFromParsingName(initial, IntPtr.Zero, ref iid, out folder);
@@ -87,7 +88,7 @@ public static class YdpFolderPicker {
 }
 [System.Windows.Forms.Application]::EnableVisualStyles()
 $owner = New-Object System.Windows.Forms.Form
-$owner.Text = 'Выбор пути — Диск'
+$owner.Text = 'Yandex Disk Proxy'
 $owner.TopMost = $true
 $owner.ShowInTaskbar = $true
 $owner.Width = 360
@@ -99,8 +100,8 @@ try {
         $path = [YdpFolderPicker]::Pick($owner.Handle, $env:YDP_PICK_INITIAL)
     } else {
         $dialog = New-Object System.Windows.Forms.OpenFileDialog
-        $dialog.Title = 'Выберите YandexDisk4.exe'
-        $dialog.Filter = 'Яндекс Диск (YandexDisk4.exe)|YandexDisk4.exe'
+        $dialog.Title = if ($env:YDP_PICK_LANGUAGE -eq 'ru') { 'Выберите YandexDisk4.exe' } else { 'Select YandexDisk4.exe' }
+        $dialog.Filter = 'Yandex Disk (YandexDisk4.exe)|YandexDisk4.exe'
         $dialog.CheckFileExists = $true
         if ($env:YDP_PICK_INITIAL -and (Test-Path -LiteralPath $env:YDP_PICK_INITIAL -PathType Leaf)) {
             $dialog.FileName = $env:YDP_PICK_INITIAL
@@ -118,14 +119,18 @@ try {
 """
 
 
-def choose(kind, initial=""):
+def choose(kind, initial="", language="en"):
     if kind not in ("folder", "client"):
         raise ValueError("Неизвестный вид пути")
     if not _picker.acquire(blocking=False):
         raise ValueError("Окно выбора уже открыто")
     try:
         env = os.environ.copy()
-        env.update(YDP_PICK_KIND=kind, YDP_PICK_INITIAL=str(initial))
+        env.update(
+            YDP_PICK_KIND=kind,
+            YDP_PICK_INITIAL=str(initial),
+            YDP_PICK_LANGUAGE="ru" if language == "ru" else "en",
+        )
         startup = subprocess.STARTUPINFO()
         startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startup.wShowWindow = 1

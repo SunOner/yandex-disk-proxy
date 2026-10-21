@@ -1,10 +1,11 @@
 """Windows entry point."""
 
+import ctypes
 import json
 import multiprocessing
 import sys
 
-from runtime import FROZEN, RESOURCES, VERSION
+from runtime import FROZEN, PRODUCT_NAME, RESOURCES, VERSION
 
 
 def main():
@@ -64,6 +65,7 @@ def main():
         return 0
     import server
 
+    ctypes.windll.kernel32.SetConsoleTitleW(PRODUCT_NAME)
     return server.main() or 0
 
 
@@ -72,5 +74,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except Exception as exc:
-        print("Ошибка запуска: " + str(exc), file=sys.stderr)
+        print("Startup failed: " + str(exc), file=sys.stderr)
         sys.exit(1)

@@ -16,16 +16,16 @@ def main():
         if state.get("phase") == "stopped":
             continue
         if process_image(state.get("pid", 0)):
-            print("Сеанс работает. Сначала нажмите «Остановить» в панели.")
+            print("Session is running. Stop it from the panel first.")
             failed = True
             continue
         result = recover_session(path.parent)
         if result["phase"] != "stopped":
-            print("Не удалось восстановить сеанс " + path.parent.name)
+            print("Could not recover session " + path.parent.name)
             failed = True
         else:
-            print("Сертификат удалён, отметки хранения восстановлены.")
-    print("Проверка завершена." if not failed else "Сохраните данные сеанса: " + str(LOCAL))
+            print("Certificate cleanup and keep-on-PC restoration completed.")
+    print("Check completed." if not failed else "Keep the session data: " + str(LOCAL))
     return 1 if failed else 0
 
 
