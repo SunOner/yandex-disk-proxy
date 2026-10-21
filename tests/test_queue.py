@@ -2,6 +2,7 @@ import collections
 import sys
 import threading
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -86,6 +87,36 @@ class QueueBehavior(unittest.TestCase):
         result = value.selected_files({"status": ["all"], "offset": ["120"], "limit": ["60"]})
         self.assertEqual(result["offset"], 0)
         self.assertEqual(len(result["rows"]), 1)
+
+    def test_recent_downloads_expand_in_completion_order_without_status_ranking(self):
+        value = model("local")
+        template = value.files.pop("file.bin")
+        start = datetime(2026, 10, 21, 10, tzinfo=timezone.utc)
+        for i in range(181):
+            path = f"{180 - i:03}.bin"
+            value.files[path] = {**template, "path": path, "status": "local"}
+            value.downloads.by_path[path] = {
+                "confirmed_at": (start + timedelta(seconds=i)).isoformat(),
+                "via_proxy": True,
+            }
+        value.files["unfinished.bin"] = {**template, "path": "unfinished.bin", "http500": 20}
+        # This old completion sorts ahead lexically but is earlier in absolute time.
+        value.downloads.by_path["180.bin"]["confirmed_at"] = "2026-10-21T12:59:59+03:00"
+        value.files["179.bin"]["http500"] = 5
+        value.files["179.bin"]["status"] = "http500"
+        first = value.selected_files({"status": ["downloaded"], "limit": ["60"]})
+        expanded = value.selected_files({"status": ["downloaded"], "limit": ["180"]})
+        self.assertEqual(first["total"], 181)
+        self.assertEqual(len(expanded["rows"]), 180)
+        self.assertEqual(expanded["rows"][:60], first["rows"])
+        self.assertEqual(first["rows"][0]["path"], "000.bin")
+        self.assertEqual(first["rows"][0]["downloaded_at"], "2026-10-21T10:03:00+00:00")
+        all_rows = value.selected_files({"status": ["downloaded"], "limit": ["10000"]})["rows"]
+        self.assertEqual(all_rows[-1]["path"], "180.bin")
+        self.assertNotIn("unfinished.bin", [r["path"] for r in all_rows])
+        self.assertEqual(
+            len(value.selected_files({"status": ["all"], "limit": ["180"]})["rows"]), 150
+        )
 
     def test_restore_ack_does_not_demote_a_completed_file(self):
         value = model("local")

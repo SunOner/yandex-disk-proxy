@@ -7,6 +7,8 @@ let snapshot = null,
   busy = false,
   refreshQueued = false,
   connected = false,
+  visibleDownloads = 60,
+  downloadedTotal = null,
   timer = null;
 const $ = (id) => document.getElementById(id);
 const labels = {
@@ -221,14 +223,30 @@ function renderRows(data) {
     size.append(bar);
     tr.append(size);
     const actions = node("td");
-    if (row.status !== "local") {
+    if (filter === "downloaded" && row.downloaded_at) {
+      const completed = new Date(row.downloaded_at);
+      const time = node("time", "download-time");
+      time.dateTime = row.downloaded_at;
+      time.title =
+        "Загрузка подтверждена Windows: " + completed.toLocaleString("ru-RU");
+      time.append(
+        node("span", "", completed.toLocaleTimeString("ru-RU")),
+        node("span", "download-date", completed.toLocaleDateString("ru-RU")),
+      );
+      actions.append(time);
+    }
+    if (filter !== "downloaded" && row.status !== "local") {
       const direct = node("a", "row-action", "Скачать…");
       direct.href = "/recovery?" + new URLSearchParams({ q: row.path });
       direct.target = "_blank";
       direct.rel = "noopener";
       actions.append(direct);
     }
-    if (snapshot.session.phase === "active" && row.status !== "local") {
+    if (
+      filter !== "downloaded" &&
+      snapshot.session.phase === "active" &&
+      row.status !== "local"
+    ) {
       if (row.status === "deferred") {
         const retry = node("button", "row-action", "Повторить");
         retry.addEventListener("click", () =>
@@ -254,15 +272,21 @@ function renderRows(data) {
     body.append(tr);
   }
   $("empty").hidden = data.rows.length > 0;
+  const recent = filter === "downloaded";
   $("pagination-label").textContent = total
-    ? number(offset + 1) +
-      "–" +
-      number(Math.min(offset + data.rows.length, total)) +
-      " из " +
-      number(total)
+    ? recent
+      ? "Показано " + number(data.rows.length) + " из " + number(total)
+      : number(offset + 1) +
+        "–" +
+        number(Math.min(offset + data.rows.length, total)) +
+        " из " +
+        number(total)
     : "Файлов нет";
   $("prev").disabled = offset === 0;
   $("next").disabled = offset + data.rows.length >= total;
+  $("load-more").hidden = !recent || data.rows.length >= total;
+  $("load-more").disabled = !connected;
+  $("load-more").textContent = "Показать ещё";
 }
 function renderEvents(events) {
   const target = $("events");
@@ -285,8 +309,14 @@ async function refresh() {
     return;
   }
   busy = true;
-  const requested = [filter, search, offset];
+  const requested = [
+    filter,
+    search,
+    offset,
+    filter === "downloaded" ? visibleDownloads : 60,
+  ];
   const criteria = JSON.stringify(requested);
+  $("load-more").disabled = true;
   try {
     const response = await fetch("/api/state", {
       signal: AbortSignal.timeout(10000),
@@ -323,21 +353,50 @@ async function refresh() {
       q: requested[1],
       status: requested[0],
       offset: String(requested[2]),
-      limit: "60",
+      limit: String(requested[3]),
     });
     const responseFiles = await fetch("/api/files?" + params, {
       signal: AbortSignal.timeout(10000),
     });
     if (!responseFiles.ok) throw new Error("Не удалось получить список файлов");
     const data = await responseFiles.json();
-    if (criteria === JSON.stringify([filter, search, offset])) renderRows(data);
-    else refreshQueued = true;
+    if (
+      criteria ===
+      JSON.stringify([
+        filter,
+        search,
+        offset,
+        filter === "downloaded" ? visibleDownloads : 60,
+      ])
+    ) {
+      if (filter === "downloaded") {
+        const added =
+          downloadedTotal === null
+            ? 0
+            : Math.max(0, data.total - downloadedTotal);
+        downloadedTotal = data.total;
+        if (added && data.rows.length < data.total) {
+          visibleDownloads += added;
+          refreshQueued = true;
+          return;
+        }
+      }
+      renderRows(data);
+    } else refreshQueued = true;
   } catch (e) {
     connected = false;
     $("session-title").textContent = "Нет связи с панелью";
     $("session-led").className = "session-led offline";
-    for (const id of ["start", "stop", "settings", "mode", "rescan"])
+    for (const id of [
+      "start",
+      "stop",
+      "settings",
+      "mode",
+      "rescan",
+      "load-more",
+    ])
       $(id).disabled = true;
+    $("load-more").textContent = "Показать ещё";
   } finally {
     busy = false;
     if (refreshQueued) {
@@ -349,6 +408,12 @@ async function refresh() {
 function setFilter(value) {
   filter = value;
   offset = 0;
+  visibleDownloads = 60;
+  downloadedTotal = null;
+  $("page-controls").hidden = value === "downloaded";
+  $("load-more").hidden = true;
+  $("downloaded-heading").textContent = value === "downloaded" ? "Скачано" : "";
+  $("file-table").classList.toggle("downloaded-view", value === "downloaded");
   $("filter").value = value;
   $("files").replaceChildren();
   const titles = {
@@ -381,6 +446,8 @@ $("search").addEventListener("input", (e) => {
   debounce = setTimeout(() => {
     search = e.target.value;
     offset = 0;
+    visibleDownloads = 60;
+    downloadedTotal = null;
     refresh();
   }, 180);
 });
@@ -390,6 +457,12 @@ $("prev").addEventListener("click", () => {
 });
 $("next").addEventListener("click", () => {
   offset += 60;
+  refresh();
+});
+$("load-more").addEventListener("click", () => {
+  if (filter !== "downloaded" || !connected || busy) return;
+  visibleDownloads += 60;
+  $("load-more").textContent = "Загрузка…";
   refresh();
 });
 $("mode").addEventListener("change", (e) =>

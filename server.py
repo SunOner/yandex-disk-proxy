@@ -15,6 +15,7 @@ import urllib.parse
 import urllib.request
 import uuid
 import webbrowser
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import reports
@@ -786,11 +787,12 @@ class Model:
         status = query.get("status", ["pending"])[0]
         try:
             offset = max(0, int(query.get("offset", ["0"])[0]))
-            limit = max(1, min(150, int(query.get("limit", ["60"])[0])))
+            limit = max(1, int(query.get("limit", ["60"])[0]))
         except ValueError:
             offset = 0
             limit = 60
         with self.lock:
+            limit = min(limit, max(1, len(self.files)) if status == "downloaded" else 150)
             rows = [
                 row.copy()
                 for row in self.files.values()
@@ -827,13 +829,24 @@ class Model:
                 "waiting": 7,
                 "local": 8,
             }
-            rows.sort(
-                key=lambda r: (
-                    rank.get(r["status"], 9),
-                    -r["http500"],
-                    r["path"].casefold(),
+            if status == "downloaded":
+
+                def completion_key(row):
+                    try:
+                        timestamp = datetime.fromisoformat(row["downloaded_at"]).timestamp()
+                    except (KeyError, TypeError, ValueError):
+                        timestamp = 0
+                    return (-timestamp, row["path"].casefold(), row["path"])
+
+                rows.sort(key=completion_key)
+            else:
+                rows.sort(
+                    key=lambda r: (
+                        rank.get(r["status"], 9),
+                        -r["http500"],
+                        r["path"].casefold(),
+                    )
                 )
-            )
             if offset >= len(rows):
                 offset = ((len(rows) - 1) // limit) * limit if rows else 0
             return {

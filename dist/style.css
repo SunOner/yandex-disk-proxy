@@ -524,6 +524,23 @@ tbody tr:hover {
   display: flex;
   gap: 7px;
 }
+.table-footer [hidden] {
+  display: none;
+}
+.downloaded-view th:last-child {
+  width: 125px;
+}
+.download-time {
+  display: block;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.download-date {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
 .icon-button {
   padding: 3px 10px;
   font-size: 16px;

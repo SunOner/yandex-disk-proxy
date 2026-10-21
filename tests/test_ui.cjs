@@ -12,6 +12,7 @@ function element(id) {
   assert.ok(html.includes(`id="${id}"`), `Removed element still used: ${id}`);
   if (!elements.has(id)) elements.set(id, {
     value:'', disabled:false, hidden:false, textContent:'', className:'',
+    classList:{toggle(){}},
     addEventListener(){}, replaceChildren(){},
   });
   return elements.get(id);
