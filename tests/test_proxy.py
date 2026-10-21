@@ -31,6 +31,7 @@ def flow(url, method="GET", status=200, body=b""):
 
 def model():
     m = server.Model.__new__(server.Model)
+    m.updates = server.Updates()
     m.lock = threading.RLock()
     m.files = {
         "test/a.bin": {

@@ -28,6 +28,7 @@ from downloads import History
 from fetcher import DownloadError, Recovery
 from inventory import scan
 from operations import ANOMALIES, LABELS
+from updates import TOPICS, Updates
 from winops import (
     APP,
     CLIENT,
@@ -65,6 +66,7 @@ def history_path():
 class Model:
     def __init__(self):
         self.lock = threading.RLock()
+        self.updates = Updates()
         self.files = {}
         self.events = collections.deque(maxlen=400)
         self.event_log = JsonLog(RUNTIME / "events.jsonl")
@@ -105,6 +107,7 @@ class Model:
             self.recovery_rows,
             info,
             lambda kind, **values: self.event({"event": kind, **values}),
+            changed=lambda: self.updates.changed("state", "recovery"),
         )
 
     def refresh_inventory(self):
@@ -236,6 +239,7 @@ class Model:
             with self.lock:
                 self.inventory["scanning"] = False
             self.inventory_lock.release()
+            self.updates.changed("state", "files")
 
     @staticmethod
     def new_row(item):
@@ -293,6 +297,7 @@ class Model:
             )
         except OSError as exc:
             self.log_error = "Не удалось записать операцию: " + type(exc).__name__
+        self.updates.changed("requests", "operations")
 
     def _log(self, kind, message, file=None, **details):
         row = {
@@ -330,6 +335,9 @@ class Model:
             self.log_error = None
         except OSError as exc:
             self.log_error = "Не удалось записать журнал: " + type(exc).__name__
+        self.updates.changed("state", "events")
+        if file:
+            self.updates.changed("files")
 
     def session(self):
         if not self.directory:
@@ -444,6 +452,17 @@ class Model:
             )
 
     def event(self, event):
+        try:
+            self._event(event)
+        finally:
+            if event.get("event") == "traffic":
+                self.updates.changed("state", "requests", "operations")
+            else:
+                self.updates.changed("state")
+                if event.get("file"):
+                    self.updates.changed("files")
+
+    def _event(self, event):
         with self.lock:
             kind = event.get("event")
             if kind == "traffic":
@@ -673,6 +692,7 @@ class Model:
             return {"mode": self.mode, "blocked": blocked}
 
     def monitor(self):
+        last_session = None
         while not self.closed:
             time.sleep(3)
             try:
@@ -681,6 +701,9 @@ class Model:
                 self.log_error = "Не удалось сохранить сводку: " + type(exc).__name__
             try:
                 current = self.session()
+                if current != last_session:
+                    last_session = current.copy()
+                    self.updates.changed("state")
                 if (
                     self.worker
                     and self.worker.poll() is not None
@@ -728,6 +751,10 @@ class Model:
                             row = self.files.get(rel)
                             if row is None:
                                 continue
+                            changed = (row["on_disk"], row["validated"]) != (
+                                metadata["on_disk"],
+                                metadata["validated"],
+                            )
                             row["on_disk"] = metadata["on_disk"]
                             row["validated"] = metadata["validated"]
                             if metadata["validated"] >= row["size"] and metadata["modified"] == 0:
@@ -746,6 +773,8 @@ class Model:
                                 )
                                 if was_deferred and self.session().get("phase") == "active":
                                     self.command("restore", rel)
+                            if changed:
+                                self.updates.changed("state", "files")
                 except (OSError, ValueError):
                     pass
 
@@ -898,11 +927,57 @@ class Handler(BaseHTTPRequestHandler):
     def internal(self):
         return hmac.compare_digest(self.headers.get("X-Local-Key", ""), KEY)
 
+    def stream_updates(self, query):
+        origin = self.headers.get("Origin")
+        if origin and origin not in (URL, f"http://localhost:{PORT}"):
+            self.reply(403, {"error": "Invalid local origin"})
+            return
+        topics = TOPICS.intersection(query.get("topics", [",".join(TOPICS)])[0].split(","))
+        if not topics:
+            self.reply(400, {"error": "Unknown update topics"})
+            return
+        updates = ACTIVE.updates
+        if not updates.clients.acquire(blocking=False):
+            self.reply(503, {"error": "Too many panel connections"})
+            return
+        try:
+            self.connection.settimeout(5)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(b"retry: 2000\n\n")
+            self.wfile.flush()
+            cursor = None  # Always resync after connection/reconnection.
+            while not ACTIVE.closed:
+                value = updates.wait(cursor, topics)
+                if value is None:
+                    break
+                cursor = value["revision"]
+                payload = (
+                    "event: update\ndata: " + json.dumps(value) + "\n\n"
+                    if value["topics"]
+                    else ": heartbeat\n\n"
+                )
+                self.wfile.write(payload.encode("utf-8"))
+                self.wfile.flush()
+                if value["topics"]:
+                    time.sleep(0.1)  # Coalesce bursts without delaying model updates.
+        except (OSError, TimeoutError):
+            pass
+        finally:
+            self.close_connection = True
+            updates.clients.release()
+
     def do_GET(self):
         if not self.allowed():
             self.reply(403, {"error": "Invalid local host"})
             return
         u = urllib.parse.urlsplit(self.path)
+        if u.path == "/api/updates":
+            self.stream_updates(urllib.parse.parse_qs(u.query))
+            return
         if u.path == "/internal/policy":
             self.reply(200, ACTIVE.policy()) if self.internal() else self.reply(
                 403, {"error": "Forbidden"}
@@ -973,6 +1048,7 @@ class Handler(BaseHTTPRequestHandler):
             "/": ("index.html", "text/html; charset=utf-8"),
             "/app.js": ("app.js", "text/javascript; charset=utf-8"),
             "/list-motion.js": ("list-motion.js", "text/javascript; charset=utf-8"),
+            "/live.js": ("live.js", "text/javascript; charset=utf-8"),
             "/toasts.js": ("toasts.js", "text/javascript; charset=utf-8"),
             "/meters.js": ("meters.js", "text/javascript; charset=utf-8"),
             "/i18n.js": ("i18n.js", "text/javascript; charset=utf-8"),
@@ -1102,6 +1178,8 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.reply(404, {"error": "Not found"})
                 return
+            if not internal:
+                ACTIVE.updates.changed("state", "files", "recovery")
             self.reply(200, {"ok": True})
         except (ValueError, TypeError, OSError, DownloadError) as exc:
             ACTIVE.log("action_error", "Действие не выполнено: " + self.path, reason=str(exc))
@@ -1167,6 +1245,7 @@ def main():
         ACTIVE.recovery.close()
         ACTIVE.stop()
         ACTIVE.closed = True
+        ACTIVE.updates.close()
         ACTIVE.inventory_wake.set()
         if ACTIVE.worker:
             try:

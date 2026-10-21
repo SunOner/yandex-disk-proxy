@@ -39,6 +39,7 @@ const state = {
 };
 const context = vm.createContext({
   I18n: require("./i18n_stub.cjs")(),
+  LivePanel: { subscribe() {} },
   console,
   Intl,
   URLSearchParams,
@@ -84,6 +85,21 @@ async function main() {
   );
   await refreshed();
   assert.equal(notices.length, 0, "Polling does not produce success notices");
+  vm.runInContext("refresh(['state']); refresh(['recovery'])", context);
+  assert.equal(
+    requests.length,
+    1,
+    "A manual refresh and live notification cannot overlap",
+  );
+  respond(state);
+  await tick();
+  assert.equal(
+    requests.length,
+    1,
+    "A notification received during a refresh triggers one follow-up",
+  );
+  await refreshed();
+  assert.equal(requests.length, 0, "Follow-up refresh drains pending changes");
   let pending = vm.runInContext("run('batch')", context);
   assert.equal(notices.length, 0, "No success before server acceptance");
   respond({ queued: 0 });

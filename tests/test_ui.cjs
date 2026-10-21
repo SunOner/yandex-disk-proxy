@@ -11,7 +11,7 @@ const rendered = [];
 function element(id) {
   assert.ok(html.includes(`id="${id}"`), `Removed element still used: ${id}`);
   if (!elements.has(id)) elements.set(id, {
-    value:'', disabled:false, hidden:false, textContent:'', className:'',
+    value:'', disabled:false, hidden:false, textContent:'', className:'', children:[],
     classList:{toggle(){}},
     listeners:{}, addEventListener(name,fn){this.listeners[name]=fn;}, replaceChildren(){},
   });
@@ -19,6 +19,7 @@ function element(id) {
 }
 const context = vm.createContext({
   I18n: require("./i18n_stub.cjs")(),
+  LivePanel:{subscribe(){}},
   console, URLSearchParams, Intl, AbortSignal, queueMicrotask,
   setTimeout(){return 0;}, clearTimeout(){}, setInterval(){return 0;},
   document:{getElementById:element, querySelector(){return null;}, querySelectorAll(){return [];}, activeElement:null},

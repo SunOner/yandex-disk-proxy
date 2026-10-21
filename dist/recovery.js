@@ -4,6 +4,7 @@ let nonce = "",
   connected = false,
   paused = false,
   busy = false,
+  refreshQueued = false,
   view = I18n.preferences.get("recoveryView", "queue"),
   offset = 0,
   query = new URLSearchParams(location.search).get("q") || "",
@@ -97,7 +98,7 @@ async function run(name, data = {}) {
 function button(text, callback) {
   const b = el("button", "row-action", text);
   b.disabled = !connected;
-  b.addEventListener("click", callback);
+  b.onclick = callback;
   return b;
 }
 async function browser(path) {
@@ -173,9 +174,17 @@ function render(data) {
     }
     cell.append(controls);
     tr.append(cell);
-    entries.push({ key: row.path, node: tr });
+    entries.push({
+      key: row.path,
+      version: JSON.stringify([row, I18n.language, connected]),
+      node: tr,
+    });
   }
-  ListMotion.render($("rows"), entries, view);
+  ListMotion.render(
+    $("rows"),
+    entries,
+    JSON.stringify([view, query, data.offset]),
+  );
   const total = data.filtered ?? data.total;
   offset = data.offset;
   $("empty").hidden = data.rows.length > 0;
@@ -219,25 +228,33 @@ function renderState(s, fresh = true) {
     ? I18n.t("Продолжить")
     : I18n.t("Приостановить");
 }
-async function refresh() {
-  if (busy) return;
+async function refresh(topics = null) {
+  if (busy) {
+    refreshQueued = true;
+    return;
+  }
   busy = true;
   const requested = revision;
   try {
     const s = await json("/api/state");
     lastState = s;
     renderState(s);
-    const data = await json(
-      (view === "queue" ? "/api/recovery" : "/api/files") +
-        "?" +
-        new URLSearchParams({
-          q: query,
-          offset,
-          status: "pending",
-          limit: 100,
-        }),
-    );
-    if (requested === revision) render(data);
+    if (
+      !Array.isArray(topics) ||
+      topics.includes(view === "queue" ? "recovery" : "files")
+    ) {
+      const data = await json(
+        (view === "queue" ? "/api/recovery" : "/api/files") +
+          "?" +
+          new URLSearchParams({
+            q: query,
+            offset,
+            status: "pending",
+            limit: 100,
+          }),
+      );
+      if (requested === revision) render(data);
+    }
     for (const id of ["batch", "pause-downloads", "cancel-downloads", "folder"])
       $(id).disabled = false;
     Toasts.problem("connection", "");
@@ -252,7 +269,10 @@ async function refresh() {
       $(id).disabled = true;
   } finally {
     busy = false;
-    if (requested !== revision) queueMicrotask(refresh);
+    if (refreshQueued || requested !== revision) {
+      refreshQueued = false;
+      queueMicrotask(refresh);
+    }
   }
 }
 for (const mode of ["queue", "files"])
@@ -322,4 +342,4 @@ I18n.onChange(() => {
   $("url-error").textContent = I18n.t($("url-error").textContent);
 });
 refresh();
-setInterval(refresh, 2000);
+LivePanel.subscribe(refresh, ["state", "files", "recovery"]);

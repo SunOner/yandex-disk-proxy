@@ -11,6 +11,7 @@ translations.onChange=fn=>languageListeners.push(fn);
 function element(){return {options:[],value:'',checked:false,disabled:false,hidden:false,textContent:'',children:[],classList:{toggle(){}},append(...items){this.children.push(...items);},replaceChildren(...items){this.children=items;},addEventListener(){},querySelectorAll(){return [];}};}
 function get(id){assert.ok(html.includes(`id="${id}"`),id);if(!elements.has(id))elements.set(id,element());return elements.get(id);}
 const context=vm.createContext({
+  LivePanel:{subscribe(){}},
   I18n: translations,console,Intl,URLSearchParams,AbortSignal,queueMicrotask,Toasts:{show(){},problem(){}},location:{hash:''},setInterval(){},setTimeout(){},window:{addEventListener(){}},document:{getElementById:get,createElement:element},rendered,
 fetch(url){return new Promise((resolve,reject)=>requests.push({url,resolve,reject}));}});
 const state={nonce:'local-test',session:{phase:'active',ca_trusted:false},tls:{client:{ok:true},upstream:{ok:true}}};

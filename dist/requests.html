@@ -110,7 +110,7 @@
         </article>
       </div>
       <h2 data-i18n="Операции">Operations</h2>
-      <div class="summary-table">
+      <div class="summary-table" data-motion-scroll>
         <table>
           <thead>
             <tr>
@@ -126,7 +126,7 @@
         </table>
       </div>
       <h2 data-i18n="Адреса запросов">Request endpoints</h2>
-      <div class="summary-table">
+      <div class="summary-table" data-motion-scroll>
         <table>
           <thead>
             <tr>
@@ -148,7 +148,7 @@
         aria-label="Log records"
         data-i18n-aria-label="Записи журнала"
       >
-        <div id="records"></div>
+        <div id="records" data-motion-scroll></div>
         <div class="log-pagination">
           <span id="count"></span
           ><button
@@ -190,6 +190,7 @@
     <div class="locale-switcher locale-floating" data-language-picker></div>
     <script src="/i18n.js"></script>
     <script src="/list-motion.js"></script>
+    <script src="/live.js"></script>
     <div
       id="toast-stack"
       class="toast-stack"

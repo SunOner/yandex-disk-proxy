@@ -191,7 +191,7 @@ function renderRows(data) {
     const text = node("div", "file-text");
     const button = node("button", "file-name", row.name);
     button.title = row.path;
-    button.addEventListener("click", () => showDetails(row));
+    button.onclick = () => showDetails(row);
     const path = node("div", "file-path", row.path);
     path.title = row.path;
     text.append(button, path);
@@ -263,29 +263,31 @@ function renderRows(data) {
     ) {
       if (row.status === "deferred") {
         const retry = node("button", "row-action", I18n.t("Повторить"));
-        retry.addEventListener("click", () =>
+        retry.onclick = () =>
           action("/api/retry", { file: row.path })
             .then(() => toast(I18n.t("Файл возвращается в очередь"), "success"))
-            .catch((e) => toast(e.message)),
-        );
+            .catch((e) => toast(e.message));
         actions.append(retry);
       } else if (
         row.http500 > 0 &&
         !["deferring", "restoring"].includes(row.status)
       ) {
         const defer = node("button", "row-action", I18n.t("Отложить"));
-        defer.addEventListener("click", () =>
+        defer.onclick = () =>
           action("/api/defer", { file: row.path })
             .then(() => toast(I18n.t("Отправлен запрос Windows"), "info"))
-            .catch((e) => toast(e.message)),
-        );
+            .catch((e) => toast(e.message));
         actions.append(defer);
       }
     }
     tr.append(actions);
-    entries.push({ key: row.path, node: tr });
+    entries.push({
+      key: row.path,
+      version: JSON.stringify([row, I18n.language, snapshot.session.phase]),
+      node: tr,
+    });
   }
-  ListMotion.render(body, entries, filter);
+  ListMotion.render(body, entries, JSON.stringify([filter, search, offset]));
   $("empty").hidden = data.rows.length > 0;
   const recent = filter === "downloaded";
   $("pagination-label").textContent = total
@@ -320,7 +322,11 @@ function renderEvents(events) {
     row.title = [I18n.t(item.reason), I18n.t(item.detail)]
       .filter(Boolean)
       .join("\n");
-    entries.push({ key: item.id, node: row });
+    entries.push({
+      key: item.id,
+      version: JSON.stringify([item, I18n.language]),
+      node: row,
+    });
   }
   ListMotion.render(target, entries);
 }
@@ -376,7 +382,7 @@ function renderMetrics(state, fresh = true) {
     fresh,
   );
 }
-async function refresh() {
+async function refresh(topics = null) {
   if (busy) {
     refreshQueued = true;
     return;
@@ -389,7 +395,8 @@ async function refresh() {
     filter === "downloaded" ? visibleDownloads : 60,
   ];
   const criteria = JSON.stringify(requested);
-  $("load-more").disabled = true;
+  const filesRequested = !Array.isArray(topics) || topics.includes("files");
+  if (filesRequested) $("load-more").disabled = true;
   try {
     const response = await fetch("/api/state", {
       signal: AbortSignal.timeout(10000),
@@ -402,6 +409,11 @@ async function refresh() {
     $("root-path").textContent =
       snapshot.root || I18n.t("Папка синхронизации ещё не выбрана");
     renderEvents(snapshot.events);
+    if (!filesRequested) {
+      $("load-more").disabled = false;
+      Toasts.problem("connection", "");
+      return;
+    }
     const params = new URLSearchParams({
       q: requested[1],
       status: requested[0],
@@ -689,4 +701,4 @@ I18n.onChange(() => {
   if ($("details").open && detailRow) showDetails(detailRow, false);
 });
 setFilter(filter);
-setInterval(refresh, 2000);
+LivePanel.subscribe(refresh, ["state", "files", "events"]);

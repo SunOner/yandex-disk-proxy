@@ -70,11 +70,11 @@ function renderSummary(data) {
         cell = element("td", "");
       if (row.operation) {
         const b = element("button", "operation-link", I18n.t(row.label));
-        b.addEventListener("click", () => {
+        b.onclick = () => {
           $("operation").value = row.operation;
           $("kind").value = "";
           switchView("requests");
-        });
+        };
         cell.append(b);
       } else cell.textContent = row.endpoint;
       tr.append(cell);
@@ -86,7 +86,11 @@ function renderSummary(data) {
         `${bytes(row.sent_bytes)} / ${bytes(row.received_bytes)}`,
       ])
         tr.append(element("td", "", value));
-      entries.push({ key: row.operation || row.endpoint, node: tr });
+      entries.push({
+        key: row.operation || row.endpoint,
+        version: JSON.stringify([row, I18n.language]),
+        node: tr,
+      });
     }
     ListMotion.render($(id), entries);
   }
@@ -335,22 +339,40 @@ function render(rows, total, dropped = 0) {
           row.anomalies.map((a) => anomalyLabels[a] || a).join(" · "),
         ),
       );
-    button.addEventListener("click", () => {
+    button.onclick = (event) => {
       Toasts.problem("request-details", "");
       selected = row.id;
       details();
       container
         .querySelectorAll(".log-record")
-        .forEach((item) => item.classList.toggle("selected", item === button));
+        .forEach((item) =>
+          item.classList.toggle("selected", item === event.currentTarget),
+        );
+    };
+    entries.push({
+      key: row.id,
+      version: JSON.stringify([row, I18n.language, selected]),
+      node: button,
     });
-    entries.push({ key: row.id, node: button });
   }
   if (!rows.length)
     entries.push({
       key: "empty",
+      version: I18n.language,
       node: element("p", "capture-note", I18n.t("Записей нет")),
     });
-  ListMotion.render(container, entries, view);
+  ListMotion.render(
+    container,
+    entries,
+    JSON.stringify([
+      view,
+      $("query").value,
+      $("level").value,
+      $("operation").value,
+      $("kind").value,
+      offset,
+    ]),
+  );
   $("count").textContent =
     (total
       ? I18n.t("{0}–{1} из {2}", [
@@ -598,9 +620,9 @@ I18n.onChange(() => {
   $("detail-title").textContent = I18n.t($("detail-title").textContent);
 });
 switchView(view);
-setInterval(() => {
-  if (!$("pause").checked) refresh();
-}, 2000);
+LivePanel.subscribe(refresh, ["state", "events", "requests", "operations"], {
+  paused: () => $("pause").checked,
+});
 window.addEventListener("pagehide", () => {
   lastDetail = null;
   $("original").textContent = "";

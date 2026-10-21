@@ -31,6 +31,8 @@ The queue and remaining size are refreshed from Windows metadata every 10 second
 
 **New downloads** lists confirmed native downloads newest first, with the Windows confirmation time. **Show more** reveals another 60 entries and keeps already expanded rows. Direct downloads are counted separately. Network traffic includes retries.
 
+The panel follows server change notifications instead of redrawing every two seconds. Bursts are combined into bounded updates; unchanged rows stay attached. New entries and existing rows slide together. In a scrolled list, the reading position stays fixed. Hidden tabs suspend updates and resynchronize when reopened. If the event stream is unavailable, polling resumes about every five seconds. Journal pause and reduced-motion settings are respected.
+
 Counter digits roll when their values change. The **⛶** button opens a fullscreen dashboard; **Esc** or **Back to files** returns to the list. If browser fullscreen is unavailable, the dashboard fills the window. Last values and their timestamp remain visible when disconnected. Reduced-motion settings are respected.
 
 ## Stop and recover

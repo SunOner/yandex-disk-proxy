@@ -24,6 +24,7 @@ class LiveInventory(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         model = server.Model.__new__(server.Model)
+        model.updates = server.Updates()
         model.lock = threading.RLock()
         model.inventory_lock = threading.RLock()
         model.inventory_wake = threading.Event()

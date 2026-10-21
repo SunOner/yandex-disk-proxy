@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1
+
+- Panel updates now follow server change notifications, with bounded refreshes and polling only when the stream is unavailable.
+- Lists retain their rows and controls. New entries slide in together with the existing rows, without staggered jumps.
+- Reading positions and keyboard focus survive inserts, reordering and progress updates. Unchanged snapshots do not mutate list DOM.
+- Hidden tabs suspend their stream; returning to the page resynchronizes it. Reduced-motion settings and journal pause remain supported.
+
 ## 0.6.0
 
 - Renamed the project, interface, executable metadata and repository to Yandex Disk Proxy.

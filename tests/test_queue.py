@@ -13,6 +13,7 @@ import server
 
 def model(status="waiting"):
     value = server.Model.__new__(server.Model)
+    value.updates = server.Updates()
     value.lock = threading.RLock()
     value.mode = "defer"
     value.threshold = 1

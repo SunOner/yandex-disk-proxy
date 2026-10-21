@@ -11,7 +11,7 @@ from pathlib import Path
 FROZEN = bool(getattr(sys, "frozen", False))
 RESOURCES = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 INSTALL = Path(sys.executable).resolve().parent if FROZEN else RESOURCES
-VERSION = "0.6.0"
+VERSION = "0.6.1"
 PRODUCT_NAME = "Yandex Disk Proxy"
 APP_ID = "yandex-disk-proxy"
 _dll_lock = threading.RLock()

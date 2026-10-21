@@ -15,6 +15,9 @@
 * {
   box-sizing: border-box;
 }
+[data-motion-scroll] {
+  overflow-anchor: none;
+}
 html[data-i18n-ready="false"] body {
   visibility: hidden;
 }

@@ -222,11 +222,14 @@ class Transport:
 
 
 class Recovery:
-    def __init__(self, root, directory, rows, inspect, emit, workers=4, destination=None):
+    def __init__(
+        self, root, directory, rows, inspect, emit, workers=4, destination=None, changed=None
+    ):
         self.root = Path(root) if root else None
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=True)
         self.rows, self.inspect, self.emit = rows, inspect, emit
+        self.changed = changed or (lambda: None)
         self.target = Path(
             destination
             or (
@@ -263,6 +266,7 @@ class Recovery:
 
     def save(self):
         atomic(self.state_path, {"root": str(self.root), "jobs": self.jobs})
+        self.changed()
 
     def update(self, rel, **values):
         with self.lock:
@@ -290,6 +294,7 @@ class Recovery:
             self.credentials.move_to_end(identity)
             while len(self.credentials) > 4:
                 self.credentials.popitem(last=False)
+        self.changed()
 
     def authorization(self):
         with self.lock:
