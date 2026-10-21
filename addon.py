@@ -39,6 +39,7 @@ def url_key(value):
 class Tracker:
     def __init__(self):
         self.links = collections.OrderedDict()
+        self.redirects = collections.OrderedDict()
         self.policy = {"mode": "observe", "blocked": {}}
         self.outbox = queue.Queue(maxsize=1000)
         self.dropped = 0
@@ -59,12 +60,14 @@ class Tracker:
         pending = None
         while not self.closed:
             batch = []
+            reported_dropped = 0
+            delivered = False
             try:
                 batch.append(pending if pending is not None else self.outbox.get(timeout=0.2))
                 pending = None
             except queue.Empty:
                 pass
-            while len(batch) < 8:
+            while len(batch) < 32:
                 try:
                     item = self.outbox.get_nowait()
                     if len(json.dumps([*batch, item], ensure_ascii=False).encode("utf-8")) > 160000:
@@ -76,8 +79,9 @@ class Tracker:
             try:
                 if batch:
                     if self.dropped:
-                        batch.append({"event": "diagnostic_dropped", "count": self.dropped})
-                        self.dropped = 0
+                        reported_dropped = self.dropped
+                        self.dropped -= reported_dropped
+                        batch.append({"event": "diagnostic_dropped", "count": reported_dropped})
                     req = urllib.request.Request(
                         self.base + "/internal/events",
                         data=json.dumps(batch, ensure_ascii=False).encode(),
@@ -87,6 +91,7 @@ class Tracker:
                         },
                     )
                     self.opener.open(req, timeout=2).close()
+                    delivered = True
                 if time.monotonic() - last >= 0.5:
                     req = urllib.request.Request(
                         self.base + "/internal/policy",
@@ -96,7 +101,8 @@ class Tracker:
                         self.policy = json.load(response)
                     last = time.monotonic()
             except Exception:
-                self.dropped += len(batch)
+                if not delivered:
+                    self.dropped += reported_dropped + len(batch) - bool(reported_dropped)
                 time.sleep(0.25)
 
     def running(self):
@@ -143,7 +149,28 @@ class Tracker:
             "http_version": request.http_version,
             "client": "disk",
             "route": "proxy",
+            "bytes_measured": True,
         }
+        for side in ("client", "server"):
+            conn = getattr(flow, side + "_conn", None)
+            if conn is not None:
+                record[side + "_connection"] = str(conn.id)
+        conn = getattr(flow, "server_conn", None)
+        if conn is not None:
+            for field, before, after in (
+                ("connect_ms", "timestamp_start", "timestamp_tcp_setup"),
+                ("tls_ms", "timestamp_tcp_setup", "timestamp_tls_setup"),
+            ):
+                start, end = getattr(conn, before, None), getattr(conn, after, None)
+                if start is not None and end is not None:
+                    record[field] = round(max(0, end - start) * 1000)
+            if conn.alpn:
+                record["alpn"] = conn.alpn.decode("ascii", errors="replace")
+            if conn.peername:
+                record["server_address"] = list(conn.peername)
+        for field in ("parent_request", "redirect_hops"):
+            if field in flow.metadata:
+                record[field] = flow.metadata[field]
         if phase == "request":
             headers, length = [], 0
             for key, value in request.headers.items(multi=True):
@@ -173,9 +200,10 @@ class Tracker:
                         break
                     headers.append([key, value])
                 record["response_headers"] = headers
-        if phase in ("complete", "error"):
+        if phase in ("progress", "complete", "error"):
             record["duration_ms"] = round(max(0, time.time() - request.timestamp_start) * 1000)
             record["received_bytes"] = flow.metadata.get("ydm_received", 0)
+            record["sent_bytes"] = flow.metadata.get("ydm_sent", 0)
             if "ydm_first_byte_ms" in flow.metadata:
                 record["first_byte_ms"] = flow.metadata["ydm_first_byte_ms"]
         if flow.error:
@@ -186,8 +214,52 @@ class Tracker:
         self.emit("traffic", record=record)
 
     def requestheaders(self, flow):
-        flow.request.stream = True
+        parent = self.redirects.get(url_key(flow.request.url))
+        if parent:
+            flow.metadata.update(parent_request=parent[0], redirect_hops=parent[1])
+        flow.request.stream = self.capture_stream(flow, "sent")
         self.diagnostic(flow, "request")
+
+    def capture_stream(self, flow, direction):
+        last = time.monotonic()
+
+        def observe(chunk):
+            nonlocal last
+            key = "ydm_" + direction
+            flow.metadata[key] = flow.metadata.get(key, 0) + len(chunk)
+            if (
+                chunk
+                and time.monotonic() - flow.metadata.get("diagnostic_progress", time.monotonic())
+                >= 2
+            ):
+                self.diagnostic(flow, "progress")
+                flow.metadata["diagnostic_progress"] = time.monotonic()
+            elif "diagnostic_progress" not in flow.metadata:
+                flow.metadata["diagnostic_progress"] = time.monotonic()
+            if direction == "received":
+                if chunk and "ydm_first_byte_ms" not in flow.metadata:
+                    flow.metadata["ydm_first_byte_ms"] = round(
+                        max(0, time.time() - flow.request.timestamp_start) * 1000
+                    )
+                rel = flow.metadata.get("ydm_file")
+                if (
+                    rel
+                    and not flow.metadata.get("ydm_link")
+                    and not flow.metadata.get("ydm_synthetic")
+                    and flow.request.method == "GET"
+                    and flow.response.status_code in (200, 206)
+                ):
+                    flow.metadata["ydm_unreported"] = flow.metadata.get("ydm_unreported", 0) + len(
+                        chunk
+                    )
+                    if not chunk or time.monotonic() - last >= 0.5:
+                        amount = flow.metadata.pop("ydm_unreported", 0)
+                        if amount:
+                            self.emit("bytes", file=rel, bytes=amount, flow=flow.id)
+                        last = time.monotonic()
+            return chunk
+
+        return observe
 
     def request(self, flow):
         if flow.request.method not in ("GET", "HEAD"):
@@ -254,14 +326,21 @@ class Tracker:
 
     def responseheaders(self, flow):
         self.diagnostic(flow, "response")
+        observer = self.capture_stream(flow, "received")
+        flow.response.stream = observer
+        location = flow.response.headers.get("location")
+        if location and flow.response.status_code in (301, 302, 303, 307, 308):
+            target = urllib.parse.urljoin(flow.request.url, location)
+            self.redirects[url_key(target)] = (flow.id, flow.metadata.get("redirect_hops", 0) + 1)
+            self.redirects.move_to_end(url_key(target))
+            while len(self.redirects) > 20000:
+                self.redirects.popitem(last=False)
         if flow.request.method not in ("GET", "HEAD"):
-            flow.response.stream = True
             return
         if flow.request.host == "cloud-api.yandex.net" and flow.response.status_code == 200:
             self.emit("api_health")
         rel = flow.metadata.get("ydm_file") or self.label(flow)
         if not rel:
-            flow.response.stream = True
             return
         flow.metadata["ydm_file"] = rel
         if flow.metadata.get("ydm_synthetic"):
@@ -279,6 +358,7 @@ class Tracker:
 
             def collect(chunk):
                 nonlocal length
+                observer(chunk)
                 if chunk:
                     length += len(chunk)
                     if length <= 65536:
@@ -290,30 +370,6 @@ class Tracker:
                 return chunk
 
             flow.response.stream = collect
-        elif status in (200, 206):
-            amount = 0
-            last = time.monotonic()
-
-            def count(chunk):
-                nonlocal amount, last
-                if chunk and "ydm_first_byte_ms" not in flow.metadata:
-                    flow.metadata["ydm_first_byte_ms"] = round(
-                        max(0, time.time() - flow.request.timestamp_start) * 1000
-                    )
-                flow.metadata["ydm_received"] = flow.metadata.get("ydm_received", 0) + len(chunk)
-                amount += len(chunk)
-                flow.metadata["ydm_unreported"] = amount
-                if not chunk or time.monotonic() - last >= 0.5:
-                    if amount:
-                        self.emit("bytes", file=rel, bytes=amount, flow=flow.id)
-                    amount = 0
-                    flow.metadata["ydm_unreported"] = 0
-                    last = time.monotonic()
-                return chunk
-
-            flow.response.stream = count
-        else:
-            flow.response.stream = True
 
     def response(self, flow):
         self.diagnostic(flow, "complete")
@@ -385,6 +441,144 @@ class Tracker:
             side=side,
             host=host,
             reason=record.get("error", ""),
+        )
+
+    def connection_event(self, conn, side, phase, client=None):
+        address = (
+            getattr(conn, "address", None)
+            if side == "upstream"
+            else getattr(conn, "peername", None)
+        )
+        started = conn.timestamp_start or time.time()
+        record = {
+            "id": "connection-" + str(conn.id),
+            "type": "connection",
+            "phase": phase,
+            "side": side,
+            "timestamp": started,
+            "host": (address or ("", 0))[0],
+            "port": (address or ("", 0))[1],
+            "connection_id": str(conn.id),
+            "client": "disk",
+            "route": "proxy",
+        }
+        if client:
+            record["client_connection"] = str(client.id)
+        if conn.peername:
+            record["peer_address"] = list(conn.peername)
+        if phase in ("complete", "error"):
+            record["duration_ms"] = round(max(0, time.time() - started) * 1000)
+        if conn.error:
+            record["error"] = str(conn.error)[:4000]
+        self.emit("traffic", record=record)
+
+    def client_connected(self, client):
+        self.connection_event(client, "client", "request")
+
+    def client_disconnected(self, client):
+        self.connection_event(client, "client", "complete")
+
+    def server_connect(self, data):
+        self.connection_event(data.server, "upstream", "request", data.client)
+
+    def server_connected(self, data):
+        self.connection_event(data.server, "upstream", "connected", data.client)
+
+    def server_connect_error(self, data):
+        self.connection_event(data.server, "upstream", "error", data.client)
+
+    def server_disconnected(self, data):
+        self.connection_event(data.server, "upstream", "complete", data.client)
+
+    def http_connect(self, flow):
+        self.emit(
+            "traffic",
+            record={
+                "id": "connect-" + flow.id,
+                "type": "connection",
+                "phase": "request",
+                "timestamp": flow.request.timestamp_start,
+                "method": "CONNECT",
+                "host": flow.request.host,
+                "port": flow.request.port,
+                "client": "disk",
+                "route": "proxy",
+                "connection_id": str(flow.client_conn.id),
+                "connect_tunnel": True,
+            },
+        )
+
+    def http_connected(self, flow):
+        self.emit(
+            "traffic",
+            record={
+                "id": "connect-" + flow.id,
+                "type": "connection",
+                "phase": "complete",
+                "status": flow.response.status_code if flow.response else None,
+                "duration_ms": round(max(0, time.time() - flow.request.timestamp_start) * 1000),
+            },
+        )
+
+    def http_connect_error(self, flow):
+        self.emit(
+            "traffic",
+            record={
+                "id": "connect-" + flow.id,
+                "type": "connection",
+                "phase": "error",
+                "status": flow.response.status_code if flow.response else None,
+                "error": str(flow.error or "CONNECT failed")[:4000],
+            },
+        )
+
+    def websocket_start(self, flow):
+        self.emit(
+            "traffic",
+            record={
+                "id": "websocket-" + flow.id,
+                "type": "websocket",
+                "phase": "request",
+                "timestamp": time.time(),
+                "url": flow.request.url,
+                "client": "disk",
+                "route": "proxy",
+                "parent_request": flow.id,
+            },
+        )
+
+    def websocket_message(self, flow):
+        message = flow.websocket.messages[-1]
+        side = "sent" if message.from_client else "received"
+        key = "ws_" + side
+        flow.metadata[key] = flow.metadata.get(key, 0) + len(message.content)
+        flow.metadata["ws_messages"] = flow.metadata.get("ws_messages", 0) + 1
+        if time.monotonic() - flow.metadata.get("ws_update", 0) >= 2:
+            flow.metadata["ws_update"] = time.monotonic()
+            self.emit(
+                "traffic",
+                record={
+                    "id": "websocket-" + flow.id,
+                    "type": "websocket",
+                    "phase": "progress",
+                    "sent_bytes": flow.metadata.get("ws_sent", 0),
+                    "received_bytes": flow.metadata.get("ws_received", 0),
+                    "messages": flow.metadata["ws_messages"],
+                },
+            )
+
+    def websocket_end(self, flow):
+        self.emit(
+            "traffic",
+            record={
+                "id": "websocket-" + flow.id,
+                "type": "websocket",
+                "phase": "complete",
+                "sent_bytes": flow.metadata.get("ws_sent", 0),
+                "received_bytes": flow.metadata.get("ws_received", 0),
+                "messages": flow.metadata.get("ws_messages", 0),
+                "close_code": flow.websocket.close_code,
+            },
         )
 
 

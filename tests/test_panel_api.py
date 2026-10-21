@@ -1,9 +1,11 @@
+import io
 import json
 import tempfile
 import threading
 import unittest
 import urllib.error
 import urllib.request
+import zipfile
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
@@ -94,6 +96,31 @@ class PanelAccess(unittest.TestCase):
                             urllib.request.Request(url + "/api/rescan", data=b"{}"), timeout=3
                         )
                     self.assertEqual(error.exception.code, 403)
+                    for headers in ({}, {"Origin": url, "X-Panel-Nonce": "invalid"}):
+                        with self.assertRaises(urllib.error.HTTPError) as error:
+                            urllib.request.urlopen(
+                                urllib.request.Request(
+                                    url + "/api/export-diagnostics", data=b"{}", headers=headers
+                                ),
+                                timeout=3,
+                            )
+                        self.assertEqual(error.exception.code, 403)
+                    request = urllib.request.Request(
+                        url + "/api/export-diagnostics",
+                        data=b"{}",
+                        headers={
+                            "Origin": url,
+                            "X-Panel-Nonce": server.NONCE,
+                            "Content-Type": "application/json",
+                        },
+                    )
+                    with urllib.request.urlopen(request, timeout=3) as response:
+                        self.assertEqual(response.headers["Content-Type"], "application/zip")
+                        archive = response.read()
+                    with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+                        self.assertNotIn(
+                            b"SECRET_", b"".join(bundle.read(name) for name in bundle.namelist())
+                        )
                 finally:
                     httpd.shutdown()
                     thread.join()

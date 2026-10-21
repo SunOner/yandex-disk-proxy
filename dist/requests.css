@@ -148,6 +148,56 @@ a {
   color: #d3ddeb;
   margin: 0;
 }
+.diagnostic-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 20px 0;
+}
+.diagnostic-metrics article {
+  min-height: 110px;
+}
+.summary-table {
+  border: 1px solid #2a3749;
+  border-radius: 9px;
+  overflow: auto;
+  margin: 12px 0 25px;
+  background: #151c26;
+}
+.summary-table table {
+  min-width: 900px;
+}
+.summary-table th:first-child {
+  width: 40%;
+}
+.summary-table td {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.summary-table .operation-link {
+  color: #a2beff;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+#summary h2 {
+  font-size: 15px;
+}
+.record-anomaly {
+  color: #e6c378;
+  font-size: 11px;
+  margin-top: 5px;
+}
+.log-tools[hidden],
+.log-tools [hidden],
+#workspace[hidden],
+#summary[hidden] {
+  display: none;
+}
+@media (max-width: 800px) {
+  .diagnostic-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 .log-footer {
   margin-top: 15px;
 }

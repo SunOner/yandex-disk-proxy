@@ -11,12 +11,20 @@
     <header class="log-header">
       <a href="/">← Диск</a>
       <h1>Запросы и журнал</h1>
+      <button
+        id="export"
+        class="button"
+        title="Архив без токенов; пути и имена файлов сохраняются"
+      >
+        Скачать диагностику
+      </button>
       <span id="connection" role="status">Подключение…</span>
     </header>
     <div id="health" class="health"></div>
     <nav class="log-tabs" aria-label="Журнал">
       <button id="tab-requests" class="button active">Запросы</button>
       <button id="tab-events" class="button">События</button>
+      <button id="tab-summary" class="button">Сводка операций</button>
     </nav>
     <div class="log-tools">
       <input
@@ -28,6 +36,18 @@
       <select id="level" aria-label="Уровень">
         <option value="all">Все</option>
         <option value="errors">Ошибки</option>
+        <option value="unusual">Необычные</option>
+      </select>
+      <select id="operation" aria-label="Тип операции">
+        <option value="">Все операции</option>
+      </select>
+      <select id="kind" aria-label="Протокол">
+        <option value="">Все протоколы</option>
+        <option value="http">HTTP</option>
+        <option value="tls">TLS</option>
+        <option value="connection">Соединения</option>
+        <option value="websocket">WebSocket</option>
+        <option value="file">Файлы Windows</option>
       </select>
       <label><input id="pause" type="checkbox" /> Пауза обновления</label>
       <label id="mask-label"
@@ -35,11 +55,63 @@
       >
     </div>
     <p class="capture-note" id="capture-note">
-      URL и заголовки запросов и ответов. Тела файлов не записываются. Оригиналы
-      — только в памяти; на диске токены скрыты.
+      Методы, URL, заголовки, соединения и изменения отметок хранения. Тела
+      запросов и файлов не записываются. Оригиналы заголовков — только в памяти.
     </p>
     <div id="log-error" role="alert" hidden></div>
-    <div class="log-workspace">
+    <section id="summary" hidden>
+      <div class="metrics diagnostic-metrics">
+        <article>
+          <span>HTTP ЗА ПЕРИОД</span><strong id="summary-total">0</strong
+          ><small id="summary-since"></small>
+        </article>
+        <article>
+          <span>ОШИБКИ HTTP</span><strong id="summary-errors">0</strong
+          ><small id="summary-active"></small>
+        </article>
+        <article>
+          <span>ДРУГИЕ ОПЕРАЦИИ</span><strong id="summary-unknown">0</strong
+          ><small id="summary-files"></small>
+        </article>
+        <article>
+          <span>ПРОПУСКИ ЗАХВАТА</span><strong id="summary-dropped">0</strong
+          ><small id="summary-retained"></small>
+        </article>
+      </div>
+      <h2>Операции</h2>
+      <div class="summary-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Операция</th>
+              <th>Всего</th>
+              <th>Ошибки</th>
+              <th>Повторы после ошибки</th>
+              <th>Среднее / максимум</th>
+              <th>Отправлено / получено</th>
+            </tr>
+          </thead>
+          <tbody id="operation-rows"></tbody>
+        </table>
+      </div>
+      <h2>Адреса запросов</h2>
+      <div class="summary-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Метод и адрес</th>
+              <th>Всего</th>
+              <th>Ошибки</th>
+              <th>Повторы</th>
+              <th>Среднее / максимум</th>
+              <th>Отправлено / получено</th>
+            </tr>
+          </thead>
+          <tbody id="endpoint-rows"></tbody>
+        </table>
+      </div>
+    </section>
+    <div id="workspace" class="log-workspace">
       <section class="log-list" aria-label="Записи журнала">
         <div id="records"></div>
         <div class="log-pagination">
@@ -65,8 +137,9 @@
       </section>
     </div>
     <footer class="log-footer">
-      Хранятся последние 1 000 записей, до 16 МБ в памяти. Файлы: запросы — до
-      20 МБ, события — до 8 МБ с ротацией.
+      До 5 000 записей и 32 МБ в памяти. Журналы: запросы — до 40 МБ, события —
+      до 8 МБ, сводка — до 2 МБ. Сводные счётчики сохраняются после ротации и
+      перезапуска.
     </footer>
     <script src="/requests.js"></script>
   </body>

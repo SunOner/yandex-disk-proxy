@@ -2,12 +2,15 @@
 
 import collections
 import copy
+import hashlib
 import json
 import re
 import threading
 import time
 import urllib.parse
 from pathlib import Path
+
+from operations import OperationStats, anomalies, enrich
 
 MASK = "[скрыто]"
 SAFE_HEADERS = {
@@ -41,6 +44,8 @@ def redact_url(value):
         path = parsed.path
         if host == "downloader.disk.yandex.ru" or host.endswith(".storage.yandex.net"):
             path = "/" + MASK
+        else:
+            path = re.sub(r"/[A-Za-z0-9_-]{32,}(?=/|$)", "/" + MASK, path)
         query = "&".join(
             urllib.parse.quote(key, safe="") + "=" + MASK
             for key, _ in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
@@ -62,7 +67,7 @@ def redact_text(value):
 
 
 def redacted(record):
-    value = copy.deepcopy(record)
+    value = copy.deepcopy({k: v for k, v in record.items() if not k.startswith("_")})
     if "url" in value:
         value["url"] = redact_url(value["url"])
     for field in ("request_headers", "response_headers"):
@@ -146,8 +151,13 @@ class JsonLog:
 
 
 class Traffic:
-    def __init__(self, path, max_records=1000, max_memory=16 * 1024**2):
-        self.disk = JsonLog(path, 5 * 1024**2)
+    def __init__(self, path, max_records=5000, max_memory=32 * 1024**2):
+        self.disk = JsonLog(path, 10 * 1024**2)
+        self.summary_log = JsonLog(Path(path).with_name("operation-summary.jsonl"), 1024**2, 1)
+        saved = self.summary_log.tail(1)
+        self.statistics = OperationStats(saved[-1] if saved else None)
+        self.attempts = collections.OrderedDict()
+        self.last_flush = time.monotonic()
         self.rows = collections.OrderedDict()
         self.sizes = {}
         self.memory = 0
@@ -156,15 +166,20 @@ class Traffic:
         self.sequence = 0
         self.lock = threading.RLock()
         self.dropped = 0
-        for row in self.disk.tail(max_records):
+        for row in self.disk.tail(max_records * 2):
             row["original_available"] = False
+            if row.get("phase") not in ("complete", "error"):
+                row.update(
+                    phase="interrupted", error="Завершение не было записано до перезапуска панели"
+                )
+            enrich(row)
             identity = row.get("id")
             if identity:
                 self.rows[identity] = row
         for identity, row in self.rows.items():
             self.sizes[identity] = len(json.dumps(row, ensure_ascii=False).encode("utf-8"))
         self.memory = sum(self.sizes.values())
-        while self.memory > max_memory and self.rows:
+        while (self.memory > max_memory or len(self.rows) > max_records) and self.rows:
             identity, _ = self.rows.popitem(last=False)
             self.memory -= self.sizes.pop(identity)
 
@@ -174,6 +189,21 @@ class Traffic:
         identity = str(record.get("id", ""))[:100]
         if not identity:
             return
+        record = {
+            k: v
+            for k, v in record.items()
+            if k
+            not in (
+                "body",
+                "request_body",
+                "response_body",
+                "content",
+                "raw_content",
+                "payload",
+                "request_content",
+                "response_content",
+            )
+        }
         with self.lock:
             previous = self.rows.get(identity, {})
             self.sequence += 1
@@ -187,6 +217,36 @@ class Traffic:
                     record.get("phase") == "request" or record.get("type") == "tls",
                 ),
             }
+            enrich(row)
+            if row.get("type", "http") == "http":
+                if record.get("phase") == "request" and previous.get("phase") is None:
+                    host = urllib.parse.urlsplit(row.get("url", "")).hostname or ""
+                    role = "storage" if host.endswith(".storage.yandex.net") else host
+                    resource = row["operation"] + role + (row.get("file") or row.get("url", ""))
+                    key = hashlib.sha256(
+                        (row.get("client", "disk") + row.get("method", "GET") + resource).encode()
+                    ).hexdigest()
+                    prior = self.attempts.get(key, {})
+                    fresh = time.time() - prior.get("at", 0) < 900
+                    row["attempt"] = prior.get("count", 0) + 1 if fresh else 1
+                    row["retry_after_error"] = bool(fresh and prior.get("failed"))
+                    row["_attempt_key"] = key
+                    self.attempts[key] = {
+                        "count": row["attempt"],
+                        "at": time.time(),
+                        "failed": False,
+                    }
+                    self.attempts.move_to_end(key)
+                    while len(self.attempts) > 20000:
+                        self.attempts.popitem(last=False)
+                if (
+                    record.get("phase") in ("complete", "error")
+                    and row.get("_attempt_key") in self.attempts
+                ):
+                    self.attempts[row["_attempt_key"]]["failed"] = bool(
+                        row.get("error") or (row.get("status") or 0) >= 400
+                    )
+            enrich(row)
             self.memory -= self.sizes.get(identity, 0)
             size = len(json.dumps(row, ensure_ascii=False).encode("utf-8"))
             self.rows[identity] = row
@@ -197,14 +257,34 @@ class Traffic:
                 removed, _ = self.rows.popitem(last=False)
                 self.memory -= self.sizes.pop(removed)
                 self.dropped += 1
-            if row.get("phase") in ("complete", "error") or row.get("type") == "tls":
-                self.disk.append(redacted(row))
+            if (
+                row.get("phase") in ("request", "connected", "complete", "error")
+                or row.get("type") == "tls"
+            ):
+                safe = redacted(row)
+                self.statistics.observe(safe)
+                self.disk.append(safe)
 
-    def select(self, search="", errors=False, offset=0, limit=100):
+    def select(
+        self, search="", errors=False, offset=0, limit=100, operation="", kind="", unusual=False
+    ):
         with self.lock:
             rows = []
             for record in reversed(self.rows.values()):
-                row = redacted(record)
+                row = redacted(
+                    {
+                        k: v
+                        for k, v in record.items()
+                        if k not in ("request_headers", "response_headers")
+                    }
+                )
+                row["anomalies"] = anomalies(row)
+                if operation and row.get("operation") != operation:
+                    continue
+                if kind and row.get("type", "http") != kind:
+                    continue
+                if unusual and not row["anomalies"]:
+                    continue
                 if errors and not (row.get("error") or (row.get("status") or 0) >= 400):
                     continue
                 if search.casefold() not in json.dumps(row, ensure_ascii=False).casefold():
@@ -224,6 +304,26 @@ class Traffic:
                 "dropped": self.dropped,
                 "capacity": self.max_records,
             }
+
+    def operations(self):
+        with self.lock:
+            return {
+                **self.statistics.snapshot(),
+                "retained": len(self.rows),
+                "evicted": self.dropped,
+                "active": sum(
+                    r.get("type", "http") == "http"
+                    and r.get("phase") not in ("complete", "error", "interrupted")
+                    for r in self.rows.values()
+                ),
+                "unusual_retained": sum(bool(anomalies(r)) for r in self.rows.values()),
+            }
+
+    def flush(self, force=False):
+        with self.lock:
+            if force or time.monotonic() - self.last_flush >= 30:
+                self.summary_log.append(self.statistics.snapshot())
+                self.last_flush = time.monotonic()
 
     def summary(self):
         with self.lock:

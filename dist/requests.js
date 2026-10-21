@@ -9,6 +9,75 @@ let offset = 0,
   selected = null,
   detailVersion = 0;
 let visibleEvents = [];
+let operationLabels = {},
+  anomalyLabels = {},
+  optionsReady = false;
+const phases = {
+  request: "Начат",
+  response: "Ответ",
+  progress: "Передача",
+  connected: "Подключено",
+  complete: "Завершён",
+  error: "Ошибка",
+  interrupted: "Нет завершения",
+};
+function bytes(n) {
+  n = Number(n) || 0;
+  let index = 0;
+  const units = ["Б", "КБ", "МБ", "ГБ"];
+  while (n >= 1024 && index < 3) {
+    n /= 1024;
+    index++;
+  }
+  return (
+    new Intl.NumberFormat("ru", {
+      maximumFractionDigits: index ? 1 : 0,
+    }).format(n) +
+    " " +
+    units[index]
+  );
+}
+function renderSummary(data) {
+  const t = data.totals;
+  $("summary-total").textContent = (t.http || 0).toLocaleString("ru-RU");
+  $("summary-errors").textContent = t.http_errors || 0;
+  $("summary-unknown").textContent = t.unknown || 0;
+  $("summary-dropped").textContent = data.capture_dropped || 0;
+  $("summary-since").textContent = "С " + clock(data.since);
+  $("summary-active").textContent = "Выполняются: " + data.active;
+  $("summary-files").textContent = "Изменений файлов: " + (t.file || 0);
+  $("summary-retained").textContent =
+    "В памяти: " + data.retained + " · удалено по лимиту: " + data.evicted;
+  for (const [id, rows] of [
+    ["operation-rows", data.operations],
+    ["endpoint-rows", data.endpoints],
+  ]) {
+    $(id).replaceChildren();
+    for (const row of rows) {
+      const tr = element("tr", ""),
+        cell = element("td", "");
+      if (row.operation) {
+        const b = element("button", "operation-link", row.label);
+        b.addEventListener("click", () => {
+          $("operation").value = row.operation;
+          $("kind").value = "";
+          switchView("requests");
+        });
+        cell.append(b);
+      } else cell.textContent = row.endpoint;
+      tr.append(cell);
+      for (const value of [
+        row.count,
+        row.errors,
+        row.retries,
+        `${row.average_ms} / ${row.max_ms} мс`,
+        `${bytes(row.sent_bytes)} / ${bytes(row.received_bytes)}`,
+      ])
+        tr.append(element("td", "", value));
+      $(id).append(tr);
+    }
+  }
+}
 function element(tag, cls, text) {
   const item = document.createElement(tag);
   item.className = cls;
@@ -45,6 +114,38 @@ function format(row) {
     ]
       .filter(Boolean)
       .join("\n\n");
+  if (["connection", "websocket", "file"].includes(row.type))
+    return [
+      clock(row.timestamp),
+      row.operation_label,
+      row.file,
+      row.host ? row.host + ":" + (row.port || "") : "",
+      `Состояние: ${phases[row.phase] || row.phase}`,
+      row.side,
+      row.connection_id ? "Соединение: " + row.connection_id : "",
+      row.client_connection
+        ? "Клиентское соединение: " + row.client_connection
+        : "",
+      row.peer_address ? "Адрес: " + row.peer_address.join(":") : "",
+      row.size !== undefined ? "Размер: " + bytes(row.size) : "",
+      row.before_size !== undefined
+        ? "Прежний размер: " + bytes(row.before_size)
+        : "",
+      row.duration_ms !== undefined
+        ? "Длительность: " + row.duration_ms + " мс"
+        : "",
+      row.messages !== undefined ? "Сообщений WebSocket: " + row.messages : "",
+      row.close_code !== undefined ? "Код закрытия: " + row.close_code : "",
+      row.sent_bytes !== undefined
+        ? "Отправлено: " + bytes(row.sent_bytes)
+        : "",
+      row.received_bytes !== undefined
+        ? "Получено: " + bytes(row.received_bytes)
+        : "",
+      row.error,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
   if (row.type === "tls")
     return [
       "TLS · " + row.side,
@@ -59,10 +160,11 @@ function format(row) {
     (values || []).map(([key, value]) => key + ": " + value).join("\n");
   return [
     clock(row.timestamp),
-    `${row.method} ${row.url} ${row.http_version}`,
+    row.operation_label,
+    [row.method, row.url, row.http_version].filter(Boolean).join(" "),
     headers(row.request_headers),
     row.status
-      ? `${row.response_version} ${row.status} ${row.reason || ""}`
+      ? [row.response_version, row.status, row.reason].filter(Boolean).join(" ")
       : "Ответ ещё не получен",
     headers(row.response_headers),
     row.source === "local"
@@ -70,7 +172,7 @@ function format(row) {
       : "Ответ сервера",
     row.duration_ms !== undefined
       ? `Длительность: ${row.duration_ms} мс`
-      : "Запрос выполняется",
+      : phases[row.phase] || "Запрос выполняется",
     row.route
       ? `Маршрут: ${row.client === "recovery" ? "прямая загрузка" : "Диск через прокси"}`
       : "",
@@ -80,6 +182,29 @@ function format(row) {
       : "",
     row.received_bytes !== undefined
       ? `Получено: ${row.received_bytes} байт`
+      : "",
+    row.sent_bytes !== undefined ? `Отправлено: ${row.sent_bytes} байт` : "",
+    row.expected_bytes !== undefined
+      ? `Content-Length ответа: ${row.expected_bytes} байт`
+      : "",
+    row.connect_ms !== undefined
+      ? `Подключение (DNS и TCP): ${row.connect_ms} мс`
+      : "",
+    row.tls_ms !== undefined ? `TLS: ${row.tls_ms} мс` : "",
+    row.alpn ? `ALPN: ${row.alpn}` : "",
+    row.attempt
+      ? `Обращение №${row.attempt}` +
+        (row.retry_after_error ? " · после ошибки" : "")
+      : "",
+    row.parent_request
+      ? `Предыдущий запрос: ${row.parent_request} · переходов: ${row.redirect_hops || 0}`
+      : "",
+    row.server_connection
+      ? `Соединение с сервером: ${row.server_connection}`
+      : "",
+    row.client_connection ? `Соединение клиента: ${row.client_connection}` : "",
+    row.anomalies?.length
+      ? row.anomalies.map((a) => anomalyLabels[a] || a).join(" · ")
       : "",
     row.error,
     row.headers_truncated ? "Часть заголовков обрезана по лимиту размера" : "",
@@ -144,7 +269,9 @@ function render(rows, total, dropped = 0) {
           ? row.level || "info"
           : row.type === "tls"
             ? "TLS · " + row.side
-            : `${row.method} · ${row.status || row.phase}`,
+            : row.type === "file"
+              ? "Windows"
+              : `${row.method || (row.type === "websocket" ? "WebSocket" : "TCP")} · ${row.status || phases[row.phase] || row.phase}`,
       ),
     );
     if (row.duration_ms !== undefined)
@@ -154,10 +281,20 @@ function render(rows, total, dropped = 0) {
       element(
         "div",
         view === "events" ? "record-message" : "record-url",
-        row.message || row.url || row.host,
+        row.message || row.url || row.host || row.operation_label,
       ),
     );
     if (row.file) button.append(element("div", "record-file", row.file));
+    if (view !== "events" && row.type !== "file" && row.operation_label)
+      meta.append(element("span", "", row.operation_label));
+    if (row.anomalies?.length)
+      button.append(
+        element(
+          "div",
+          "record-anomaly",
+          row.anomalies.map((a) => anomalyLabels[a] || a).join(" · "),
+        ),
+      );
     button.addEventListener("click", () => {
       selected = row.id;
       details();
@@ -182,11 +319,32 @@ async function refresh() {
     return;
   }
   busy = true;
-  const criteria = [view, $("query").value, $("level").value, offset];
+  const criteria = [
+    view,
+    $("query").value,
+    $("level").value,
+    offset,
+    $("operation").value,
+    $("kind").value,
+  ];
   try {
-    const state = await json("/api/state");
+    const [state, metadata] = await Promise.all([
+      json("/api/state"),
+      json("/api/operations"),
+    ]);
+    operationLabels = metadata.labels;
+    anomalyLabels = metadata.anomaly_labels;
+    if (!optionsReady) {
+      for (const [value, label] of Object.entries(operationLabels)) {
+        const option = element("option", "", label);
+        option.value = value;
+        $("operation").append(option);
+      }
+      optionsReady = true;
+    }
     nonce = state.nonce;
     connected = true;
+    $("export").disabled = false;
     $("connection").textContent = "Панель подключена";
     const trust =
       state.session.ca_trusted === false
@@ -204,6 +362,11 @@ async function refresh() {
         : "нет данных";
     $("health").textContent =
       `${trust} · Диск → прокси: ${side("client")} · Прокси → Яндекс: ${side("upstream")}`;
+    if (view === "summary") {
+      renderSummary(metadata);
+      error(state.log_error || "");
+      return;
+    }
     const result =
       view === "events"
         ? await json("/api/events")
@@ -212,12 +375,22 @@ async function refresh() {
               new URLSearchParams({
                 q: criteria[1],
                 errors: criteria[2] === "errors" ? "1" : "0",
+                unusual: criteria[2] === "unusual" ? "1" : "0",
+                operation: criteria[4],
+                kind: criteria[5],
                 offset: String(criteria[3]),
               }),
           );
     if (
       JSON.stringify(criteria) !==
-      JSON.stringify([view, $("query").value, $("level").value, offset])
+      JSON.stringify([
+        view,
+        $("query").value,
+        $("level").value,
+        offset,
+        $("operation").value,
+        $("kind").value,
+      ])
     ) {
       queued = true;
       return;
@@ -238,9 +411,11 @@ async function refresh() {
       offset = result.offset;
       render(result.rows, result.total, result.dropped);
     }
+    if (selected) details();
     error(state.log_error || result.error || "");
   } catch (exc) {
     connected = false;
+    $("export").disabled = true;
     $("connection").textContent = "Нет связи с панелью";
     error(exc.message);
   } finally {
@@ -262,10 +437,48 @@ function switchView(next) {
   $("capture-note").hidden = view === "events";
   $("tab-requests").classList.toggle("active", view === "requests");
   $("tab-events").classList.toggle("active", view === "events");
+  $("tab-summary").classList.toggle("active", view === "summary");
+  $("summary").hidden = view !== "summary";
+  $("workspace").hidden = view === "summary";
+  for (const id of ["query", "level"]) $(id).hidden = view === "summary";
+  for (const id of ["operation", "kind", "mask-label"])
+    $(id).hidden = view !== "requests";
+  $("capture-note").hidden = view !== "requests";
   refresh();
 }
 $("tab-requests").addEventListener("click", () => switchView("requests"));
 $("tab-events").addEventListener("click", () => switchView("events"));
+$("tab-summary").addEventListener("click", () => switchView("summary"));
+for (const id of ["operation", "kind"])
+  $(id).addEventListener("change", () => {
+    offset = 0;
+    refresh();
+  });
+$("export").addEventListener("click", async () => {
+  if (!connected) return;
+  $("export").disabled = true;
+  try {
+    const response = await fetch("/api/export-diagnostics", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Panel-Nonce": nonce },
+      body: "{}",
+      signal: AbortSignal.timeout(60000),
+    });
+    if (!response.ok) throw Error("Не удалось собрать архив");
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "yandex-disk-diagnostics.zip";
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  } catch (exc) {
+    error(exc.message);
+  } finally {
+    $("export").disabled = false;
+  }
+});
 $("query").addEventListener("input", () => {
   offset = 0;
   refresh();

@@ -107,6 +107,7 @@ class Transport:
             "phase": "request",
             "client": "recovery",
             "route": "direct",
+            "bytes_measured": True,
             "timestamp": started,
             "method": "GET",
             "url": url,
@@ -136,6 +137,14 @@ class Transport:
             raise DownloadError("Соединение: " + type(exc).__name__) from exc
         response.capture_id, response.capture_started = identity, started
         response.capture_connection = connection
+        response.capture_context = {
+            "type": "http",
+            "url": url,
+            "timestamp": started,
+            "method": "GET",
+            "bytes_measured": True,
+            **({"file": rel} if rel else {}),
+        }
         self.emit(
             "traffic",
             record={
@@ -156,6 +165,7 @@ class Transport:
         self.emit(
             "traffic",
             record={
+                **response.capture_context,
                 "id": response.capture_id,
                 "client": "recovery",
                 "phase": "error" if error else "complete",

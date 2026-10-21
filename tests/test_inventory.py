@@ -32,6 +32,7 @@ class LiveInventory(unittest.TestCase):
         model.downloads = History(self.root / "history.json")
         model.log = Mock()
         model.recovery = Mock()
+        model.traffic = Mock()
         model.session = Mock(return_value={"phase": "active"})
         self.model = model
         self.root_patch = patch.object(server, "ROOT", self.root)

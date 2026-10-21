@@ -17,6 +17,7 @@ import uuid
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import reports
 import runtime
 import settings
 import windows_ui
@@ -25,6 +26,7 @@ from diagnostics import JsonLog, Traffic, redact_text
 from downloads import History
 from fetcher import DownloadError, Recovery
 from inventory import scan
+from operations import ANOMALIES, LABELS
 from winops import (
     APP,
     CLIENT,
@@ -113,6 +115,7 @@ class Model:
             with self.lock:
                 self.inventory["scanning"] = True
                 previous = {p: (r["size"], r["status"]) for p, r in self.files.items()}
+                initialized = bool(self.inventory.get("first"))
                 pending = dict(self.downloads.pending)
             result = scan(ROOT)
             metadata = {}
@@ -131,6 +134,7 @@ class Model:
                     except (OSError, ValueError):
                         pass
             added = changed = 0
+            activities = []
             with self.lock:
                 for rel, item in result.selected.items():
                     row = self.files.get(rel)
@@ -138,9 +142,17 @@ class Model:
                         row = self.new_row(item)
                         self.files[rel] = row
                         added += 1
+                        if initialized:
+                            activities.append(("pin", rel, {"size": item["size"]}))
                     elif row["size"] != item["size"] or (
                         item["cloud_pending"] and row["status"] == "local"
                     ):
+                        if row["size"] != item["size"]:
+                            activities.append(
+                                ("resize", rel, {"before_size": row["size"], "size": item["size"]})
+                            )
+                        elif row["status"] == "local":
+                            activities.append(("dehydrated", rel, {"size": item["size"]}))
                         row.update(
                             size=item["size"],
                             status="waiting",
@@ -185,6 +197,13 @@ class Model:
                     ):
                         continue
                     removed.append(rel)
+                    activities.append(
+                        (
+                            "unpin" if rel in result.seen else "file_removed",
+                            rel,
+                            {"size": row["size"]},
+                        )
+                    )
                     self.files.pop(rel)
                     self.downloads.pending.pop(rel, None)
                 if metadata or removed:
@@ -210,6 +229,8 @@ class Model:
                 self.inventory["first"] = True
             if hasattr(self, "recovery"):
                 self.recovery.cancel_paths(removed)
+            for operation, rel, details in activities:
+                self.file_activity(operation, rel, **details)
         finally:
             with self.lock:
                 self.inventory["scanning"] = False
@@ -254,6 +275,24 @@ class Model:
         with self.lock:
             self._log(kind, message, file, **details)
 
+    def file_activity(self, operation, rel, **details):
+        try:
+            self.traffic.add(
+                {
+                    "id": uuid.uuid4().hex,
+                    "type": "file",
+                    "phase": "complete",
+                    "timestamp": time.time(),
+                    "operation": operation,
+                    "file": rel,
+                    "client": "windows",
+                    "route": "metadata",
+                    **details,
+                }
+            )
+        except OSError as exc:
+            self.log_error = "Не удалось записать операцию: " + type(exc).__name__
+
     def _log(self, kind, message, file=None, **details):
         row = {
             "id": uuid.uuid4().hex[:12],
@@ -280,6 +319,11 @@ class Model:
         if file:
             row["file"] = file
         self.events.appendleft(row)
+        if file and kind in ("local", "deferred", "restored"):
+            self.file_activity(
+                {"local": "hydrated", "deferred": "proxy_defer", "restored": "proxy_restore"}[kind],
+                file,
+            )
         try:
             self.event_log.append(row)
             self.log_error = None
@@ -465,6 +509,8 @@ class Model:
                     "diagnostic_dropped": "Часть событий пропущена: очередь диагностики заполнена",
                     "proxy_log": "Сообщение прокси",
                 }
+                if kind == "diagnostic_dropped":
+                    self.counters["diagnostic_dropped"] += max(0, int(event.get("count", 0)))
                 self.log(
                     kind,
                     messages[kind],
@@ -626,6 +672,10 @@ class Model:
     def monitor(self):
         while not self.closed:
             time.sleep(3)
+            try:
+                self.traffic.flush()
+            except OSError as exc:
+                self.log_error = "Не удалось сохранить сводку: " + type(exc).__name__
             try:
                 current = self.session()
                 if (
@@ -806,7 +856,7 @@ class Handler(BaseHTTPRequestHandler):
     def allowed(self):
         return self.headers.get("Host") in (f"127.0.0.1:{PORT}", f"localhost:{PORT}")
 
-    def reply(self, code, value, kind="application/json; charset=utf-8"):
+    def reply(self, code, value, kind="application/json; charset=utf-8", headers=None):
         body = (
             value
             if isinstance(value, bytes)
@@ -817,6 +867,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
         self.send_header(
             "Content-Security-Policy",
             "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'",
@@ -876,8 +928,25 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(
                 200,
                 ACTIVE.traffic.select(
-                    query.get("q", [""])[0], query.get("errors", [""])[0] == "1", offset
+                    query.get("q", [""])[0],
+                    query.get("errors", [""])[0] == "1",
+                    offset,
+                    operation=query.get("operation", [""])[0],
+                    kind=query.get("kind", [""])[0],
+                    unusual=query.get("unusual", [""])[0] == "1",
                 ),
+            )
+            return
+        if u.path == "/api/operations":
+            self.reply(
+                200,
+                {
+                    **ACTIVE.traffic.operations(),
+                    "labels": LABELS,
+                    "anomaly_labels": ANOMALIES,
+                    "capture_dropped": ACTIVE.counters["diagnostic_dropped"],
+                    "inventory": ACTIVE.inventory,
+                },
             )
             return
         if u.path == "/api/events":
@@ -958,6 +1027,14 @@ class Handler(BaseHTTPRequestHandler):
                 return
             elif self.path == "/api/request-detail":
                 self.reply(200, ACTIVE.traffic.detail(data.get("id"), data.get("reveal") is True))
+                return
+            elif self.path == "/api/export-diagnostics":
+                self.reply(
+                    200,
+                    reports.bundle(ACTIVE),
+                    "application/zip",
+                    {"Content-Disposition": 'attachment; filename="yandex-disk-diagnostics.zip"'},
+                )
                 return
             elif self.path == "/api/rescan":
                 ACTIVE.inventory_wake.set()
@@ -1070,6 +1147,10 @@ def main():
                 ACTIVE.worker.wait(timeout=35)
             except subprocess.TimeoutExpired:
                 print("Восстановление ещё выполняется отдельным процессом.", flush=True)
+        try:
+            ACTIVE.traffic.flush(force=True)
+        except OSError:
+            print("Не удалось сохранить сводку диагностики.", flush=True)
         server.server_close()
 
 
