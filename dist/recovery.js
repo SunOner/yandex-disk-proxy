@@ -101,7 +101,7 @@ async function browser(path) {
   }
 }
 function render(data) {
-  $("rows").replaceChildren();
+  const entries = [];
   for (const row of data.rows) {
     const tr = el("tr");
     const file = el("td");
@@ -153,8 +153,9 @@ function render(data) {
     }
     cell.append(controls);
     tr.append(cell);
-    $("rows").append(tr);
+    entries.push({ key: row.path, node: tr });
   }
+  ListMotion.render($("rows"), entries, view);
   const total = data.filtered ?? data.total;
   offset = data.offset;
   $("empty").hidden = data.rows.length > 0;

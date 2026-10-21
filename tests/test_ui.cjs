@@ -28,6 +28,7 @@ const state = phase => ({session:{phase},mode:'defer',pending:1,pending_bytes:10
 const tick = () => new Promise(resolve=>setImmediate(resolve));
 function respond(request, value){request.resolve({ok:true,json:async()=>value});}
 async function main() {
+  vm.runInContext(fs.readFileSync(path.join(root,'dist/list-motion.js'),'utf8'),context);
   vm.runInContext(code,context);
   vm.runInContext('renderRows = data => rendered.push(data.rows);',context);
   vm.runInContext("setFilter('errors')",context);

@@ -97,6 +97,7 @@ async function responseList(total, count, newest = false) {
   return new URLSearchParams(request.url.split("?")[1]);
 }
 async function main() {
+  vm.runInContext(fs.readFileSync(path.join(root, 'dist/list-motion.js'), 'utf8'), context);
   vm.runInContext(code, context);
   await responseList(0, 0);
   vm.runInContext("setFilter('downloaded')", context);

@@ -52,7 +52,7 @@ function renderSummary(data) {
     ["operation-rows", data.operations],
     ["endpoint-rows", data.endpoints],
   ]) {
-    $(id).replaceChildren();
+    const entries = [];
     for (const row of rows) {
       const tr = element("tr", ""),
         cell = element("td", "");
@@ -74,8 +74,9 @@ function renderSummary(data) {
         `${bytes(row.sent_bytes)} / ${bytes(row.received_bytes)}`,
       ])
         tr.append(element("td", "", value));
-      $(id).append(tr);
+      entries.push({ key: row.operation || row.endpoint, node: tr });
     }
+    ListMotion.render($(id), entries);
   }
 }
 function element(tag, cls, text) {
@@ -248,7 +249,7 @@ async function details() {
 }
 function render(rows, total, dropped = 0) {
   const container = $("records");
-  container.replaceChildren();
+  const entries = [];
   for (const row of rows) {
     const button = element(
       "button",
@@ -302,10 +303,14 @@ function render(rows, total, dropped = 0) {
         .querySelectorAll(".log-record")
         .forEach((item) => item.classList.toggle("selected", item === button));
     });
-    container.append(button);
+    entries.push({ key: row.id, node: button });
   }
   if (!rows.length)
-    container.append(element("p", "capture-note", "Записей нет"));
+    entries.push({
+      key: "empty",
+      node: element("p", "capture-note", "Записей нет"),
+    });
+  ListMotion.render(container, entries, view);
   $("count").textContent =
     (total
       ? `${offset + 1}–${Math.min(offset + rows.length, total)} из ${total}`

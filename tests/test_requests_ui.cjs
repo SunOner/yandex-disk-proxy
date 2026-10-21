@@ -16,6 +16,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function respond(request,value){request.resolve({ok:true,json:async()=>value});}
 async function respondPair(){respond(requests.shift(),state);respond(requests.shift(),metadata);await tick();}
 async function main(){
+vm.runInContext(fs.readFileSync(path.join(root,'dist/list-motion.js'),'utf8'),context);
 vm.runInContext(code,context);vm.runInContext('render = rows => rendered.push(rows)',context);
 vm.runInContext('$("operation").value="other"; refresh()',context);
 await respondPair();

@@ -171,7 +171,7 @@ function renderRows(data) {
   total = data.total;
   offset = data.offset;
   const body = $("files");
-  body.replaceChildren();
+  const entries = [];
   for (const row of data.rows) {
     const tr = node("tr");
     const cell = node("td");
@@ -269,8 +269,9 @@ function renderRows(data) {
       }
     }
     tr.append(actions);
-    body.append(tr);
+    entries.push({ key: row.path, node: tr });
   }
+  ListMotion.render(body, entries, filter);
   $("empty").hidden = data.rows.length > 0;
   const recent = filter === "downloaded";
   $("pagination-label").textContent = total
@@ -290,7 +291,7 @@ function renderRows(data) {
 }
 function renderEvents(events) {
   const target = $("events");
-  target.replaceChildren();
+  const entries = [];
   for (const item of events) {
     const row = node("div", "event " + item.event);
     row.append(
@@ -300,8 +301,9 @@ function renderEvents(events) {
     if (item.file) row.append(node("div", "event-file", item.file));
     row.classList.add(item.level || "info");
     row.title = [item.reason, item.detail].filter(Boolean).join("\n");
-    target.append(row);
+    entries.push({ key: item.id, node: row });
   }
+  ListMotion.render(target, entries);
 }
 async function refresh() {
   if (busy) {

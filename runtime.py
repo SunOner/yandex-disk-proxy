@@ -11,7 +11,7 @@ from pathlib import Path
 FROZEN = bool(getattr(sys, "frozen", False))
 RESOURCES = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 INSTALL = Path(sys.executable).resolve().parent if FROZEN else RESOURCES
-VERSION = "0.5.2"
+VERSION = "0.5.3"
 _dll_lock = threading.RLock()
 
 

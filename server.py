@@ -969,6 +969,7 @@ class Handler(BaseHTTPRequestHandler):
         static = {
             "/": ("index.html", "text/html; charset=utf-8"),
             "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+            "/list-motion.js": ("list-motion.js", "text/javascript; charset=utf-8"),
             "/style.css": ("style.css", "text/css; charset=utf-8"),
             "/requests": ("requests.html", "text/html; charset=utf-8"),
             "/requests.js": ("requests.js", "text/javascript; charset=utf-8"),
