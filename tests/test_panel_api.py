@@ -181,6 +181,10 @@ class PanelAccess(unittest.TestCase):
                             )
                             self.assertEqual(response.headers["Cache-Control"], "no-store")
                     for route in (
+                        "/settings",
+                        "/settings.js",
+                        "/settings.css",
+                        "/api/certificate/file",
                         "/requests",
                         "/requests.js",
                         "/i18n.js",
@@ -200,6 +204,12 @@ class PanelAccess(unittest.TestCase):
                         "/api/recovery",
                     ):
                         self.assertEqual(urllib.request.urlopen(url + route, timeout=3).status, 200)
+                    for route in ("/api/certificate/settings", "/api/certificate/action"):
+                        with self.assertRaises(urllib.error.HTTPError) as error:
+                            urllib.request.urlopen(
+                                urllib.request.Request(url + route, data=b"{}"), timeout=3
+                            )
+                        self.assertEqual(error.exception.code, 403)
                     for route in ("enqueue", "batch", "browser", "control"):
                         with self.assertRaises(urllib.error.HTTPError) as error:
                             urllib.request.urlopen(

@@ -11,7 +11,7 @@ datas = [
     (str(Path(sys.base_prefix) / 'LICENSE.txt'), 'licenses/python'),
 ]
 binaries = []
-hiddenimports = ['server', 'session', 'control', 'recover', 'addon']
+hiddenimports = ['server', 'session', 'control', 'recover', 'addon', 'certificate_helper']
 for package in ('mitmproxy', 'mitmproxy_rs'):
     package_data, package_binaries, package_imports = collect_all(package)
     datas += package_data

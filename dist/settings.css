@@ -1,0 +1,129 @@
+.settings-page {
+  display: block;
+  padding: 28px 32px;
+}
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  max-width: 1040px;
+  margin: 0 auto 28px;
+}
+.settings-header h1 {
+  margin: 0;
+  font-size: 24px;
+}
+.settings-header #connection {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+.settings-page a {
+  color: var(--blue);
+  text-decoration: none;
+}
+.settings-main {
+  margin: 0 auto;
+  padding: 0;
+  max-width: 1040px;
+  min-width: 0;
+}
+.settings-card {
+  padding: 26px;
+  margin-bottom: 20px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.settings-card h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.settings-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+  margin-bottom: 24px;
+}
+#certificate-status {
+  color: var(--muted);
+  font-size: 13px;
+}
+#certificate-status.trusted {
+  color: var(--green);
+}
+.settings-option {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+}
+.settings-option input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--green);
+}
+.settings-option span {
+  display: grid;
+  gap: 4px;
+}
+.settings-option small,
+.settings-note {
+  color: var(--muted);
+  line-height: 1.7;
+  font-size: 13px;
+}
+.settings-values {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 14px 22px;
+  margin: 24px 0;
+}
+.settings-values dt {
+  color: var(--muted);
+}
+.settings-values dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.settings-values code {
+  font-size: 13px;
+}
+.settings-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.settings-card details {
+  margin-top: 24px;
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+}
+.settings-card summary {
+  cursor: pointer;
+  color: var(--blue);
+}
+@media (max-width: 650px) {
+  .settings-page {
+    padding: 20px 16px;
+  }
+  .settings-card {
+    padding: 20px;
+  }
+  .settings-header {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .settings-values {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .settings-values dd {
+    margin-bottom: 12px;
+  }
+  .settings-heading {
+    align-items: start;
+  }
+}

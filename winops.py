@@ -1,12 +1,16 @@
+import contextlib
 import ctypes as C
 import json
 import os
 import re
+import ssl
 import subprocess
 import sys
 import tempfile
+import uuid
 from ctypes import wintypes as W
 from pathlib import Path
+from types import SimpleNamespace
 
 import runtime
 import settings
@@ -223,6 +227,113 @@ def client_pids():
     return [int(x) for x in r.stdout.split() if x.isdigit() and process_image(int(x)) == CLIENT]
 
 
+def is_elevated():
+    return bool(C.windll.shell32.IsUserAnAdmin())
+
+
+def launch_on_desktop(args, env):
+    """Use the desktop user's token and an explicit environment when elevated.
+
+    Disk otherwise relaunches itself unelevated through Explorer, losing the
+    proxy and certificate environment inherited from our elevated worker.
+    """
+    user = C.WinDLL("user32", use_last_error=True)
+    security = C.WinDLL("advapi32", use_last_error=True)
+    user.GetShellWindow.restype = W.HWND
+    user.GetWindowThreadProcessId.argtypes = [W.HWND, C.POINTER(W.DWORD)]
+    security.OpenProcessToken.argtypes = [W.HANDLE, W.DWORD, C.POINTER(W.HANDLE)]
+    security.DuplicateTokenEx.argtypes = [
+        W.HANDLE,
+        W.DWORD,
+        C.c_void_p,
+        C.c_int,
+        C.c_int,
+        C.POINTER(W.HANDLE),
+    ]
+
+    class StartupInfo(C.Structure):
+        _fields_ = [
+            ("cb", W.DWORD),
+            ("lpReserved", W.LPWSTR),
+            ("lpDesktop", W.LPWSTR),
+            ("lpTitle", W.LPWSTR),
+            ("dwX", W.DWORD),
+            ("dwY", W.DWORD),
+            ("dwXSize", W.DWORD),
+            ("dwYSize", W.DWORD),
+            ("dwXCountChars", W.DWORD),
+            ("dwYCountChars", W.DWORD),
+            ("dwFillAttribute", W.DWORD),
+            ("dwFlags", W.DWORD),
+            ("wShowWindow", W.WORD),
+            ("cbReserved2", W.WORD),
+            ("lpReserved2", C.c_void_p),
+            ("hStdInput", W.HANDLE),
+            ("hStdOutput", W.HANDLE),
+            ("hStdError", W.HANDLE),
+        ]
+
+    class ProcessInfo(C.Structure):
+        _fields_ = [
+            ("hProcess", W.HANDLE),
+            ("hThread", W.HANDLE),
+            ("dwProcessId", W.DWORD),
+            ("dwThreadId", W.DWORD),
+        ]
+
+    security.CreateProcessWithTokenW.argtypes = [
+        W.HANDLE,
+        W.DWORD,
+        W.LPCWSTR,
+        W.LPWSTR,
+        W.DWORD,
+        C.c_void_p,
+        W.LPCWSTR,
+        C.POINTER(StartupInfo),
+        C.POINTER(ProcessInfo),
+    ]
+    shell_pid = W.DWORD()
+    shell = user.GetShellWindow()
+    if not shell or not user.GetWindowThreadProcessId(shell, C.byref(shell_pid)):
+        raise OSError("Не найден процесс рабочего стола для запуска Диска")
+    process = k.OpenProcess(0x1000, False, shell_pid.value)
+    if not process:
+        raise C.WinError(C.get_last_error())
+    token, primary, child = W.HANDLE(), W.HANDLE(), ProcessInfo()
+    try:
+        if not security.OpenProcessToken(process, 0x000A, C.byref(token)):
+            raise C.WinError(C.get_last_error())
+        # TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE | TOKEN_QUERY; primary token.
+        if not security.DuplicateTokenEx(token, 0x000B, None, 2, 1, C.byref(primary)):
+            raise C.WinError(C.get_last_error())
+        block = C.create_unicode_buffer(
+            "\0".join(
+                f"{key}={value}" for key, value in sorted(env.items(), key=lambda p: p[0].upper())
+            )
+            + "\0\0"
+        )
+        command = C.create_unicode_buffer(subprocess.list2cmdline(args))
+        startup = StartupInfo(cb=C.sizeof(StartupInfo), lpDesktop="winsta0\\default")
+        with runtime.external_dlls():
+            if not security.CreateProcessWithTokenW(
+                primary,
+                0,
+                args[0],
+                command,
+                NO_WINDOW | 0x400,
+                block,
+                str(Path(args[0]).parent),
+                C.byref(startup),
+                C.byref(child),
+            ):
+                raise C.WinError(C.get_last_error())
+        return SimpleNamespace(pid=child.dwProcessId)
+    finally:
+        for handle in (child.hThread, child.hProcess, primary, token, process):
+            if handle:
+                k.CloseHandle(handle)
+
+
 def launch_client(proxy=False):
     if CLIENT is None or not CLIENT.is_file():
         raise ValueError("Не найден установленный Яндекс Диск")
@@ -234,14 +345,17 @@ def launch_client(proxy=False):
             NO_PROXY="localhost,127.0.0.1,::1",
             SSL_CERT_FILE=str(CA_DIR / "mitmproxy-ca-cert.pem"),
         )
-    return runtime.external_popen([str(CLIENT), "-startmenu"], env=env, creationflags=NO_WINDOW)
+    args = [str(CLIENT), "-startmenu"]
+    if is_elevated():
+        return launch_on_desktop(args, env)
+    return runtime.external_popen(args, env=env, creationflags=NO_WINDOW)
 
 
-def ca_present(thumb=None):
-    thumb = thumb or THUMB
-    if not re.fullmatch("[0-9A-F]{40}", thumb):
-        raise ValueError("Некорректный отпечаток сертификата")
-    # Query the same user's actual certificate store, without PowerShell provider caches.
+@contextlib.contextmanager
+def root_store(readonly=False, scope=None, physical=False):
+    scope = scope or settings.certificate_scope()
+    if scope not in ("current_user", "local_machine"):
+        raise ValueError("Неизвестное хранилище сертификата")
     crypt = C.WinDLL("crypt32", use_last_error=True)
     crypt.CertOpenStore.argtypes = [C.c_void_p, W.DWORD, C.c_void_p, W.DWORD, C.c_void_p]
     crypt.CertOpenStore.restype = C.c_void_p
@@ -255,39 +369,146 @@ def ca_present(thumb=None):
     ]
     crypt.CertFindCertificateInStore.restype = C.c_void_p
     crypt.CertFreeCertificateContext.argtypes = [C.c_void_p]
+    crypt.CertDeleteCertificateFromStore.argtypes = [C.c_void_p]
+    crypt.CertAddEncodedCertificateToStore.argtypes = [
+        C.c_void_p,
+        W.DWORD,
+        C.c_void_p,
+        W.DWORD,
+        W.DWORD,
+        C.c_void_p,
+    ]
     crypt.CertCloseStore.argtypes = [C.c_void_p, W.DWORD]
-
-    class HashBlob(C.Structure):
-        _fields_ = [("size", W.DWORD), ("data", C.POINTER(C.c_ubyte))]
-
+    location = 0x10000 if scope == "current_user" else 0x20000
+    flags = location | 0x4000 | (0x8000 if readonly else 0)
     store = crypt.CertOpenStore(
-        10, 0, None, 0x10000 | 0x4000 | 0x8000, C.cast(C.c_wchar_p("ROOT"), C.c_void_p)
+        13 if physical else 10, 0, None, flags, C.cast(C.c_wchar_p("ROOT"), C.c_void_p)
     )
     if not store:
         raise C.WinError(C.get_last_error())
     try:
-        digest = (C.c_ubyte * 20).from_buffer_copy(bytes.fromhex(thumb))
-        blob = HashBlob(20, digest)
-        found = crypt.CertFindCertificateInStore(store, 0x10001, 0, 0x10000, C.byref(blob), None)
-        if found:
-            crypt.CertFreeCertificateContext(found)
-            return True
-        return False
+        yield crypt, store
     finally:
         crypt.CertCloseStore(store, 0)
 
 
-def remove_ca(thumb=None):
-    thumb = thumb or THUMB
+def find_ca(crypt, store, thumb):
     if not re.fullmatch("[0-9A-F]{40}", thumb):
         raise ValueError("Некорректный отпечаток сертификата")
-    runtime.external_run(
-        ["certutil.exe", "-user", "-silent", "-delstore", "Root", thumb],
-        capture_output=True,
-        timeout=20,
-        creationflags=NO_WINDOW,
+
+    class HashBlob(C.Structure):
+        _fields_ = [("size", W.DWORD), ("data", C.POINTER(C.c_ubyte))]
+
+    digest = (C.c_ubyte * 20).from_buffer_copy(bytes.fromhex(thumb))
+    blob = HashBlob(20, digest)
+    return crypt.CertFindCertificateInStore(store, 0x10001, 0, 0x10000, C.byref(blob), None)
+
+
+def ca_present(thumb=None, scope=None):
+    with root_store(readonly=True, scope=scope) as (crypt, store):
+        found = find_ca(crypt, store, thumb or THUMB)
+        if found:
+            crypt.CertFreeCertificateContext(found)
+            return True
+        return False
+
+
+def remove_ca(thumb=None, scope=None):
+    scope = scope or settings.certificate_scope()
+    thumb = thumb or THUMB
+    if not ca_present(thumb, scope):
+        return True
+    if scope == "local_machine" and not is_elevated():
+        certificate_helper("remove", scope, thumb)
+        return not ca_present(thumb, scope)
+    # A physical store prevents a user-store action from deleting an inherited machine root.
+    with root_store(scope=scope, physical=True) as (crypt, store):
+        found = find_ca(crypt, store, thumb or THUMB)
+        # CertDeleteCertificateFromStore consumes the context, including on failure.
+        if found and not crypt.CertDeleteCertificateFromStore(found):
+            raise C.WinError(C.get_last_error())
+    return not ca_present(thumb, scope)
+
+
+def add_ca(scope=None):
+    scope = scope or settings.certificate_scope()
+    if scope == "local_machine" and not is_elevated():
+        certificate_helper("install", scope, THUMB)
+        if not ca_present(scope=scope):
+            raise OSError("Не удалось установить сертификат прокси")
+        return
+    der = ssl.PEM_cert_to_DER_cert((CA_DIR / "mitmproxy-ca-cert.pem").read_text(encoding="utf-8"))
+    encoded = (C.c_ubyte * len(der)).from_buffer_copy(der)
+    with root_store(scope=scope) as (crypt, store):
+        # Use an existing identical certificate without replacing its properties.
+        if not crypt.CertAddEncodedCertificateToStore(store, 1, encoded, len(der), 2, None):
+            raise C.WinError(C.get_last_error())
+    if not ca_present(scope=scope):
+        raise OSError("Не удалось установить сертификат прокси")
+
+
+def certificate_helper(action, scope, thumb):
+    """Elevate a short-lived certificate operation; the panel and proxy stay unelevated."""
+    if action not in ("install", "remove") or scope not in ("current_user", "local_machine"):
+        raise ValueError("Неизвестное действие с сертификатом")
+    if not re.fullmatch("[0-9A-F]{40}", thumb):
+        raise ValueError("Некорректный отпечаток сертификата")
+
+    class ExecuteInfo(C.Structure):
+        _fields_ = [
+            ("cbSize", W.DWORD),
+            ("fMask", W.ULONG),
+            ("hwnd", W.HWND),
+            ("lpVerb", W.LPCWSTR),
+            ("lpFile", W.LPCWSTR),
+            ("lpParameters", W.LPCWSTR),
+            ("lpDirectory", W.LPCWSTR),
+            ("nShow", C.c_int),
+            ("hInstApp", W.HINSTANCE),
+            ("lpIDList", C.c_void_p),
+            ("lpClass", W.LPCWSTR),
+            ("hkeyClass", W.HKEY),
+            ("dwHotKey", W.DWORD),
+            ("hIcon", W.HANDLE),
+            ("hProcess", W.HANDLE),
+        ]
+
+    nonce = uuid.uuid4().hex
+    result_path = settings.RUNTIME / ("certificate-" + nonce + ".json")
+    args = runtime.command("certificate", action, scope, thumb, nonce)
+    execute = ExecuteInfo(
+        cbSize=C.sizeof(ExecuteInfo),
+        fMask=0x40 | 0x400,
+        lpVerb="runas",
+        lpFile=args[0],
+        lpParameters=subprocess.list2cmdline(args[1:]),
+        nShow=0,
+        lpDirectory=str(runtime.INSTALL),
     )
-    return not ca_present(thumb)
+    shell = C.WinDLL("shell32", use_last_error=True)
+    shell.ShellExecuteExW.argtypes = [C.POINTER(ExecuteInfo)]
+    try:
+        with runtime.external_dlls():
+            if not shell.ShellExecuteExW(C.byref(execute)):
+                code = C.get_last_error()
+                if code == 1223:
+                    raise OSError("Запрос прав Windows отменён")
+                raise C.WinError(code)
+        if not execute.hProcess or k.WaitForSingleObject(execute.hProcess, 60000) != 0:
+            raise OSError("Помощник установки сертификата не ответил")
+        if not result_path.is_file():
+            raise OSError("Помощник установки сертификата не вернул результат")
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        if (
+            result.get("thumbprint") != thumb
+            or result.get("scope") != scope
+            or not result.get("ok")
+        ):
+            raise OSError(result.get("error") or "Не удалось изменить доверие к сертификату")
+    finally:
+        if execute.hProcess:
+            k.CloseHandle(execute.hProcess)
+        result_path.unlink(missing_ok=True)
 
 
 def recover_session(directory):
@@ -322,7 +543,9 @@ def _recover_session(directory):
             problems.append(name + "_stop")
     # Restore trust before potentially slow file-metadata operations.
     try:
-        removed = not state.get("ca_owned") or remove_ca(state.get("ca_thumbprint"))
+        removed = not state.get("ca_owned") or remove_ca(
+            state.get("ca_thumbprint"), scope=state.get("certificate_scope", "current_user")
+        )
     except Exception:
         removed = False
     for rel, item in list(ledger.items()):

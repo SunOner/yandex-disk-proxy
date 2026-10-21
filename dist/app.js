@@ -683,6 +683,18 @@ async function requestStart() {
     return;
   }
   $("consent-error").hidden = true;
+  const machineCertificate = snapshot.certificate_scope === "local_machine";
+  for (const [id, source] of [
+    ["certificate-consent-intro", machineCertificate
+      ? "Прокси временно добавит сертификат в доверенные корневые сертификаты компьютера Windows. Ему смогут доверять приложения всех пользователей. Windows может запросить права администратора. Добавленный прокси сертификат удаляется при остановке."
+      : "Прокси временно добавит сертификат в доверенные корневые сертификаты текущего пользователя Windows. Ему смогут доверять и другие приложения. Добавленный прокси сертификат удаляется при остановке."],
+    ["certificate-consent-label", machineCertificate
+      ? "Разрешаю временно добавить этот сертификат в доверенные корневые сертификаты компьютера Windows (для всех пользователей)."
+      : "Разрешаю временно добавить этот сертификат в доверенные корневые сертификаты моего пользователя Windows."],
+  ]) {
+    $(id).setAttribute("data-i18n", source);
+    $(id).textContent = I18n.t(source);
+  }
   $("certificate-thumbprint").textContent = snapshot.certificate_thumbprint
     .match(/.{1,4}/g)
     .join(" ");
@@ -734,6 +746,7 @@ $("consent-start").addEventListener("click", async () => {
     $("consent-start").disabled = true;
     await changeSession("start", {
       accepted_thumbprint: snapshot.certificate_thumbprint,
+      accepted_certificate_scope: snapshot.certificate_scope,
     });
   } finally {
     $("consent-start").disabled = !$("consent-checkbox").checked;

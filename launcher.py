@@ -77,6 +77,12 @@ def main():
 
         sys.argv = [sys.argv[0], *args[1:]]
         return session.main() or 0
+    if mode == "--certificate":
+        import certificate_helper
+
+        if len(args) != 5:
+            return 1
+        return certificate_helper.main(*args[1:])
     if mode == "--stop":
         import control
 

@@ -13,7 +13,9 @@ Requires Windows 10/11 x64 and Yandex Disk 4.
 1. Download **YandexDiskProxy.exe** from the [latest release](https://github.com/SunOner/yandex-disk-proxy/releases/latest) and run it. Python is not required.
 2. Open the panel at **http://127.0.0.1:18765** and turn on the proxy switch.
 3. If the paths were not detected, select the sync folder and `YandexDisk4.exe` using **Browse…**, then turn on the switch again.
-4. Approve the certificate on first use. It is passed only to the Disk process; the system proxy settings remain unchanged. No additional account login is needed.
+4. Approve temporary certificate trust in the panel. The recommended automatic mode installs it in the Windows computer's trusted roots through a small helper; accept the Windows administrator prompt if shown. Applications of all users can trust it while installed. The proxy removes trust it added on stop and preserves preexisting trust. No manual certificate import or additional account login is needed. System proxy settings remain unchanged.
+
+**Settings** opens a separate tab with automatic certificate installation, trust status, store selection and additional install/remove/download actions. Current-user trust is available as a compatibility option; it may be rejected by Windows or the Disk client on some systems. Changing the store requires confirming trust for that scope again.
 
 Keep the console open while using the proxy. The browser tab can be closed.
 

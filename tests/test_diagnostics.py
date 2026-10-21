@@ -6,9 +6,9 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from test_proxy import flow
+from test_proxy import flow, model
 
 import addon
 import windows_ui
@@ -17,6 +17,100 @@ from diagnostics import JsonLog, Traffic, redact_text
 
 
 class Diagnostics(unittest.TestCase):
+    def test_panel_counts_unmatched_streams_partial_errors_and_retries_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            panel = model()
+            panel.traffic = Traffic(Path(directory) / "traffic.jsonl")
+            panel.recovery = Mock()
+            for index in range(2):
+                tracker = addon.Tracker()
+                item = flow("https://downloader.disk.yandex.ru/unmatched", status=500)
+                tracker.requestheaders(item)
+                tracker.request(item)
+                tracker.responseheaders(item)
+                item.response.stream(b"server error")
+                item.response.stream(b"")
+                tracker.response(item)
+                events = list(tracker.outbox.queue)
+                for event in events:
+                    panel.event(event)
+                # A repeated cumulative checkpoint is not additional traffic.
+                panel.event(events[-1])
+                self.assertEqual(panel.counters["network_bytes"], 12 * (index + 1))
+            self.assertEqual(panel.counters["http500"], 2)
+            panel.command.assert_not_called()
+            # A failed request still accounts for the bytes received before cancellation.
+            item = flow("https://downloader.disk.yandex.ru/partial")
+            tracker = addon.Tracker()
+            tracker.requestheaders(item)
+            tracker.request(item)
+            tracker.responseheaders(item)
+            item.response.stream(b"partial")
+            tracker.error(item)
+            for event in tracker.outbox.queue:
+                panel.event(event)
+            self.assertEqual(panel.counters["network_bytes"], 31)
+
+    def test_mapped_file_bytes_do_not_double_count_panel_network_traffic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            panel = model()
+            panel.traffic = Traffic(Path(directory) / "traffic.jsonl")
+            panel.recovery = Mock()
+            tracker = addon.Tracker()
+            item = flow("https://downloader.disk.yandex.ru/mapped")
+            tracker.remember(item.request.url, "test/a.bin")
+            tracker.requestheaders(item)
+            tracker.request(item)
+            tracker.responseheaders(item)
+            item.response.stream(b"file data")
+            item.response.stream(b"")
+            tracker.response(item)
+            for event in tracker.outbox.queue:
+                panel.event(event)
+            self.assertEqual(panel.files["test/a.bin"]["network_bytes"], 9)
+            self.assertEqual(panel.counters["network_bytes"], 9)
+
+    def test_network_progress_uses_deltas_and_excludes_direct_preview_and_local_data(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log = Traffic(Path(directory) / "traffic.jsonl")
+            record = {
+                "id": "download",
+                "type": "http",
+                "phase": "progress",
+                "client": "disk",
+                "route": "proxy",
+                "source": "upstream",
+            }
+            self.assertEqual(log.add({**record, "received_bytes": 100}), 100)
+            self.assertEqual(log.add({**record, "received_bytes": 150}), 50)
+            self.assertEqual(log.add({**record, "received_bytes": 150}), 0)
+            self.assertEqual(log.add({**record, "received_bytes": 100}), 0)
+            self.assertEqual(log.add({**record, "phase": "complete", "received_bytes": 150}), 0)
+            for change in (
+                {"source": "local"},
+                {"client": "preview"},
+                {"client": "recovery", "route": "direct"},
+                {"type": "file"},
+            ):
+                self.assertEqual(
+                    log.add({**record, "id": str(change), "received_bytes": 20, **change}), 0
+                )
+
+    def test_network_checkpoint_survives_detail_eviction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log = Traffic(Path(directory) / "traffic.jsonl", max_records=1)
+            record = {
+                "id": "download",
+                "phase": "progress",
+                "client": "disk",
+                "route": "proxy",
+                "source": "upstream",
+            }
+            self.assertEqual(log.add({**record, "received_bytes": 100}), 100)
+            log.add({"id": "file-change", "type": "file", "phase": "complete"})
+            self.assertNotIn("download", log.rows)
+            self.assertEqual(log.add({**record, "received_bytes": 150}), 50)
+
     def test_secrets_only_available_by_explicit_memory_detail_and_never_on_disk(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "requests.jsonl"

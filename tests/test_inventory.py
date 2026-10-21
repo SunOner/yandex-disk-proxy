@@ -186,6 +186,47 @@ class LiveInventory(unittest.TestCase):
         self.assertTrue(result.selected["file.bin"]["cloud_pending"])
         enumerate_dir.assert_called_once_with(self.root)
 
+    def test_completion_during_scan_does_not_return_file_to_pending(self):
+        self.refresh({"file": item("file")})
+        complete = {**metadata(), "validated": 100, "on_disk": 100}
+
+        def scan_while_download_finishes(root):
+            self.model.files["file"].update(status="local", validated=100, on_disk=100)
+            self.model.downloads.record("file", complete, True)
+            return Scan({"file": item("file")}, {"file"})
+
+        with (
+            patch.object(server, "scan", side_effect=scan_while_download_finishes),
+            patch.object(server, "info") as inspect,
+        ):
+            self.model.refresh_inventory()
+        inspect.assert_not_called()
+        self.assertEqual(self.model.files["file"]["status"], "local")
+        self.assertEqual(self.model.files["file"]["validated"], 100)
+        self.assertEqual(self.model.selected_files({"status": ["pending"]})["total"], 0)
+        self.assertTrue(self.model.inventory_wake.is_set())
+        self.assertEqual(self.model.downloads.summary()["count"], 1)
+
+    def test_full_cloud_metadata_overrides_stale_recall_attribute(self):
+        self.refresh({"file": item("file", pending=False)})
+        complete = {**metadata(), "validated": 100, "on_disk": 100}
+        with (
+            patch.object(server, "scan", return_value=Scan({"file": item("file")}, {"file"})),
+            patch.object(server, "info", return_value=complete),
+        ):
+            self.model.refresh_inventory()
+        self.assertEqual(self.model.files["file"]["status"], "local")
+        self.assertEqual(self.model.files["file"]["validated"], 100)
+        self.assertEqual(self.model.selected_files({"status": ["pending"]})["total"], 0)
+        self.assertNotIn("file", self.model.downloads.pending)
+
+    def test_actual_dehydration_still_returns_completed_file_to_pending(self):
+        self.refresh({"file": item("file", pending=False)})
+        self.refresh({"file": item("file", pending=True)})
+        self.assertEqual(self.model.files["file"]["status"], "waiting")
+        self.assertEqual(self.model.files["file"]["validated"], 0)
+        self.assertEqual(self.model.selected_files({"status": ["pending"]})["total"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

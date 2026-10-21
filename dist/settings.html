@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en" data-i18n-ready="false">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title data-i18n="Настройки — Yandex Disk Proxy">
+      Settings — Yandex Disk Proxy
+    </title>
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/settings.css" />
+  </head>
+  <body class="settings-page">
+    <header class="settings-header">
+      <a href="/">← Yandex Disk Proxy</a>
+      <h1 data-i18n="Настройки">Settings</h1>
+      <span id="connection" role="status" data-i18n-once="Подключение…"
+        >Connecting…</span
+      >
+    </header>
+    <main class="settings-main">
+      <section class="settings-card">
+        <div class="settings-heading">
+          <h2 data-i18n="Сертификат прокси">Proxy certificate</h2>
+          <strong id="certificate-status" role="status">—</strong>
+        </div>
+        <label class="settings-option"
+          ><input id="automatic" type="checkbox" disabled /><span
+            ><b data-i18n="Автоматическая установка">Automatic installation</b
+            ><small
+              data-i18n="Устанавливать сертификат при включении прокси. Рекомендуемый режим."
+              >Install the certificate when starting the proxy.
+              Recommended.</small
+            ></span
+          ></label
+        >
+        <p
+          class="settings-note"
+          data-i18n="Добавленный прокси сертификат удаляется при остановке. Сертификаты, которым доверяли ранее, сохраняются."
+        >
+          A certificate added by the proxy is removed on stop. Previously
+          trusted certificates are preserved.
+        </p>
+        <dl class="settings-values">
+          <dt data-i18n="Хранилище">Store</dt>
+          <dd>
+            <select
+              id="scope"
+              disabled
+              aria-label="Certificate store"
+              data-i18n-aria-label="Хранилище сертификата"
+            >
+              <option
+                value="local_machine"
+                data-i18n="Компьютер — автоматический режим"
+              >
+                Computer — automatic mode
+              </option>
+              <option
+                value="current_user"
+                data-i18n="Текущий пользователь — совместимость"
+              >
+                Current user — compatibility
+              </option>
+            </select>
+            <p id="scope-note" class="settings-note"></p>
+          </dd>
+          <dt data-i18n="Отпечаток SHA-1">SHA-1 fingerprint</dt>
+          <dd><code id="thumbprint">—</code></dd>
+          <dt data-i18n="Действителен до">Valid until</dt>
+          <dd id="expires">—</dd>
+        </dl>
+        <details>
+          <summary data-i18n="Дополнительные действия">
+            Additional actions
+          </summary>
+          <p
+            class="settings-note"
+            data-i18n="Установка и удаление доступны при выключенном прокси. Скачанный файл .cer нужен только для ручной диагностики."
+          >
+            Installation and removal are available while the proxy is off. The
+            .cer download is only needed for manual diagnostics.
+          </p>
+          <div class="settings-actions">
+            <button id="check" class="button" data-i18n="Проверить доверие">
+              Check trust
+            </button>
+            <button
+              id="install"
+              class="button"
+              disabled
+              data-i18n="Установить сертификат"
+            >
+              Install certificate
+            </button>
+            <button
+              id="remove"
+              class="button"
+              disabled
+              data-i18n="Удалить сертификат"
+            >
+              Remove certificate
+            </button>
+            <a
+              class="button"
+              href="/api/certificate/file"
+              download="YandexDiskProxy.cer"
+              data-i18n="Скачать сертификат .cer"
+              >Download .cer certificate</a
+            >
+          </div>
+        </details>
+        <p
+          id="certificate-message"
+          class="settings-note"
+          role="status"
+          hidden
+        ></p>
+        <p id="certificate-error" class="dialog-error" role="alert" hidden></p>
+      </section>
+      <section class="settings-card">
+        <h2 data-i18n="Подключение Диска">Disk connection</h2>
+        <dl class="settings-values">
+          <dt data-i18n="Папка синхронизации">Sync folder</dt>
+          <dd id="root">—</dd>
+          <dt data-i18n="Приложение Яндекс Диск">Yandex Disk application</dt>
+          <dd id="client">—</dd>
+          <dt data-i18n="Состояние прокси">Proxy status</dt>
+          <dd id="proxy-status">—</dd>
+        </dl>
+        <a href="/" data-i18n="Открыть панель">Open panel</a>
+      </section>
+    </main>
+    <div class="locale-switcher locale-floating" data-language-picker></div>
+    <script src="/i18n.js"></script>
+    <script src="/live.js"></script>
+    <script src="/settings.js"></script>
+  </body>
+</html>

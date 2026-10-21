@@ -1,6 +1,65 @@
 "use strict";
 const I18n = (() => {
   const english = {
+    "Хранилище сертификата": "Certificate store",
+    "Компьютер — автоматический режим": "Computer — automatic mode",
+    "Текущий пользователь — совместимость": "Current user — compatibility",
+    "Сертификату будут доверять приложения всех пользователей этого ПК. Windows может запросить права администратора.":
+      "Applications of all users on this PC will trust the certificate. Windows may request administrator permission.",
+    "Сертификату будут доверять приложения текущего пользователя. Windows может запросить подтверждение доверия.":
+      "Applications of the current user will trust the certificate. Windows may request confirmation of trust.",
+    "Прокси временно добавит сертификат в доверенные корневые сертификаты компьютера Windows. Ему смогут доверять приложения всех пользователей. Windows может запросить права администратора. Добавленный прокси сертификат удаляется при остановке.":
+      "The proxy temporarily adds its certificate to the Windows computer's trusted roots. Applications of all users can trust it. Windows may request administrator permission. A certificate added by the proxy is removed on stop.",
+    "Разрешаю временно добавить этот сертификат в доверенные корневые сертификаты компьютера Windows (для всех пользователей).":
+      "Allow temporarily adding this certificate to the Windows computer's trusted roots (for all users).",
+    "Неизвестное хранилище сертификата": "Unknown certificate store",
+    "Не удалось установить сертификат прокси":
+      "Could not install the proxy certificate",
+    "Запрос прав Windows отменён": "Windows permission request was cancelled",
+    "Помощник установки сертификата не ответил":
+      "The certificate helper did not respond",
+    "Помощник установки сертификата не вернул результат":
+      "The certificate helper returned no result",
+    "Не удалось изменить доверие к сертификату":
+      "Could not change certificate trust",
+    Настройки: "Settings",
+    "Настройки ↗": "Settings ↗",
+    "Настройки — Yandex Disk Proxy": "Settings — Yandex Disk Proxy",
+    "Автоматическая установка": "Automatic installation",
+    "Устанавливать сертификат при включении прокси. Рекомендуемый режим.":
+      "Install the certificate when starting the proxy. Recommended.",
+    "Добавленный прокси сертификат удаляется при остановке. Сертификаты, которым доверяли ранее, сохраняются.":
+      "A certificate added by the proxy is removed on stop. Previously trusted certificates are preserved.",
+    Хранилище: "Store",
+    "Доверенные корневые сертификаты текущего пользователя Windows":
+      "Current Windows user's trusted roots",
+    "Отпечаток SHA-1": "SHA-1 fingerprint",
+    "Действителен до": "Valid until",
+    "Дополнительные действия": "Additional actions",
+    "Установка и удаление доступны при выключенном прокси. Скачанный файл .cer нужен только для ручной диагностики.":
+      "Installation and removal are available while the proxy is off. The .cer download is only needed for manual diagnostics.",
+    "Проверить доверие": "Check trust",
+    "Установить сертификат": "Install certificate",
+    "Удалить сертификат": "Remove certificate",
+    "Скачать сертификат .cer": "Download .cer certificate",
+    "Подключение Диска": "Disk connection",
+    "Состояние прокси": "Proxy status",
+    "Открыть панель": "Open panel",
+    "Выполняется…": "Working…",
+    "Сначала подтвердите сертификат при включении прокси":
+      "Approve the certificate when starting the proxy first",
+    "Сначала выключите прокси": "Turn off the proxy first",
+    "Операция с сертификатом уже выполняется":
+      "A certificate operation is already running",
+    "Неизвестное действие с сертификатом": "Unknown certificate action",
+    "Укажите режим установки сертификата":
+      "Choose a certificate installation mode",
+    "Включите автоматическую установку сертификата в настройках":
+      "Enable automatic certificate installation in settings",
+    "Не удалось установить сертификат прокси для текущего пользователя":
+      "Could not install the proxy certificate for the current user",
+    "Не удалось удалить сертификат прокси":
+      "Could not remove the proxy certificate",
     Ожидает: "Waiting",
     "На компьютере": "On this PC",
     "Запрос ссылки": "Requesting link",
@@ -502,14 +561,14 @@ const I18n = (() => {
     Сохранить: "Save",
     "ПОДКЛЮЧЕНИЕ HTTPS": "HTTPS CONNECTION",
     "Сертификат прокси": "Proxy certificate",
-    "Прокси перезапустит Диск и передаст сертификат только его процессу. Хранилище сертификатов Windows не меняется.":
-      "The proxy will restart Disk and pass the certificate only to its process. The Windows certificate store is unchanged.",
+    "Прокси временно добавит сертификат в доверенные корневые сертификаты текущего пользователя Windows. Ему смогут доверять и другие приложения. Добавленный прокси сертификат удаляется при остановке.":
+      "The proxy temporarily adds its certificate to the current Windows user's trusted roots. Other applications can also trust it. A certificate added by the proxy is removed when the proxy stops.",
     "Через прокси работает только Диск. При остановке отметки хранения восстанавливаются, Диск запускается напрямую.":
       "Only Disk uses the proxy. Stopping restores offline selections and starts Disk with a direct connection.",
     "Отпечаток сертификата этого ПК · SHA-1":
       "Certificate fingerprint on this PC · SHA-1",
-    "Разрешаю использовать этот сертификат для HTTPS Диска.":
-      "Allow this certificate for Disk HTTPS connections.",
+    "Разрешаю временно добавить этот сертификат в доверенные корневые сертификаты моего пользователя Windows.":
+      "Allow temporarily adding this certificate to my Windows user's trusted roots.",
     "Включить прокси": "Start proxy",
     "К файлам": "Back to files",
     "Осталось скачать": "Left to download",

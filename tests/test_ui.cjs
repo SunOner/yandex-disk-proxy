@@ -23,6 +23,9 @@ function element(id) {
       addEventListener(name, fn) {
         this.listeners[name] = fn;
       },
+      setAttribute(name, value) {
+        this[name] = value;
+      },
       replaceChildren() {},
       showModal() {
         this.open = true;
@@ -73,6 +76,7 @@ const state = (phase) => ({
   configured: true,
   certificate_approved: true,
   certificate_thumbprint: "0123456789ABCDEF0123456789ABCDEF01234567",
+  certificate_scope: "current_user",
   mode: "defer",
   pending: 1,
   pending_bytes: 100,
@@ -269,6 +273,10 @@ async function main() {
   assert.equal(
     JSON.parse(requests[0].options.body).accepted_thumbprint,
     state("idle").certificate_thumbprint,
+  );
+  assert.equal(
+    JSON.parse(requests[0].options.body).accepted_certificate_scope,
+    "current_user",
   );
   await finishAction("active");
   await consent;

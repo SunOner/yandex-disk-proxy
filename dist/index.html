@@ -69,6 +69,9 @@
         ><span>⌁</span
         ><span class="i18n-text" data-i18n="Мониторинг ↗">Monitoring ↗</span></a
       >
+      <a class="nav" href="/settings" target="_blank" rel="noopener"
+        ><span>⚙</span><span data-i18n="Настройки ↗">Settings ↗</span></a
+      >
       <div class="locale-switcher" data-language-picker></div>
     </aside>
     <main>
@@ -416,11 +419,12 @@
       <div class="eyebrow" data-i18n="ПОДКЛЮЧЕНИЕ HTTPS">HTTPS CONNECTION</div>
       <h2 data-i18n="Сертификат прокси">Proxy certificate</h2>
       <p
-        class="dialog-intro"
-        data-i18n="Прокси перезапустит Диск и передаст сертификат только его процессу. Хранилище сертификатов Windows не меняется."
+        class="dialog-intro" id="certificate-consent-intro"
+        data-i18n="Прокси временно добавит сертификат в доверенные корневые сертификаты текущего пользователя Windows. Ему смогут доверять и другие приложения. Добавленный прокси сертификат удаляется при остановке."
       >
-        The proxy will restart Disk and pass the certificate only to its
-        process. The Windows certificate store is unchanged.
+        The proxy temporarily adds its certificate to the current Windows user's
+        trusted roots. Other applications can also trust it. A certificate added
+        by the proxy is removed when the proxy stops.
       </p>
       <p
         class="dialog-intro"
@@ -436,9 +440,9 @@
       </div>
       <label class="consent-check"
         ><input id="consent-checkbox" type="checkbox" /><span
-          class="i18n-text"
-          data-i18n="Разрешаю использовать этот сертификат для HTTPS Диска."
-          >Allow this certificate for Disk HTTPS connections.</span
+          class="i18n-text" id="certificate-consent-label"
+          data-i18n="Разрешаю временно добавить этот сертификат в доверенные корневые сертификаты моего пользователя Windows."
+          >Allow temporarily adding this certificate to my Windows user's trusted roots.</span
         ></label
       >
       <p id="consent-error" class="dialog-error" role="alert" hidden></p>

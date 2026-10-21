@@ -157,6 +157,7 @@ class Traffic:
         saved = self.summary_log.tail(1)
         self.statistics = OperationStats(saved[-1] if saved else None)
         self.attempts = collections.OrderedDict()
+        self.network_received = collections.OrderedDict()
         self.last_flush = time.monotonic()
         self.rows = collections.OrderedDict()
         self.sizes = {}
@@ -264,6 +265,23 @@ class Traffic:
                 safe = redacted(row)
                 self.statistics.observe(safe)
                 self.disk.append(safe)
+            # File matching is optional: API calls, retries and unmatched downloads
+            # still consume network traffic. Progress records contain cumulative bytes.
+            if (
+                row.get("type", "http") == "http"
+                and row.get("client") == "disk"
+                and row.get("route") == "proxy"
+                and row.get("source") == "upstream"
+            ):
+                received = row.get("received_bytes", 0)
+                if isinstance(received, int) and received >= 0:
+                    before = self.network_received.get(identity, 0)
+                    self.network_received[identity] = max(before, received)
+                    self.network_received.move_to_end(identity)
+                    while len(self.network_received) > 30000:
+                        self.network_received.popitem(last=False)
+                    return max(0, received - before)
+            return 0
 
     def select(
         self, search="", errors=False, offset=0, limit=100, operation="", kind="", unusual=False

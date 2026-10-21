@@ -23,6 +23,25 @@ _config_lock = threading.RLock()
 PYTHON = Path(sys.executable).resolve()
 PANEL_PORT = int(os.environ.get("YDP_PANEL_PORT", "18765"))
 PROXY_PORT = int(os.environ.get("YDP_PROXY_PORT", "18080"))
+CERTIFICATE_SCOPE = "local_machine"
+
+
+def certificate_scope():
+    saved = read()
+    scope = saved.get(
+        "certificate_scope", saved.get("consented_certificate_scope", CERTIFICATE_SCOPE)
+    )
+    if scope not in ("current_user", "local_machine"):
+        raise ValueError("Неизвестное хранилище сертификата")
+    return scope
+
+
+def certificate_approved():
+    saved = read()
+    return (
+        saved.get("consented_thumbprint") == THUMB
+        and saved.get("consented_certificate_scope") == certificate_scope()
+    )
 
 
 def read():

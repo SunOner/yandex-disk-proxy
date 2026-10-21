@@ -8,6 +8,7 @@ import json
 import os
 import secrets
 import sqlite3
+import ssl
 import subprocess
 import sys
 import threading
@@ -90,6 +91,8 @@ class Model:
         self.seen_http = collections.OrderedDict()
         self.latest_cleanup = None
         self.reported_stop = None
+        self.certificate_job = None
+        self.certificate_thread = None
         self.downloads = History(history_path())
         self.inventory_lock = threading.RLock()
         self.inventory_wake = threading.Event()
@@ -231,6 +234,26 @@ class Model:
             with self.lock:
                 for rel, item in result.selected.items():
                     row = self.files.get(rel)
+                    details = metadata.get(rel)
+                    if (
+                        details
+                        and details["size"] == item["size"]
+                        and details["validated"] >= details["size"]
+                        and details["modified"] == 0
+                    ):
+                        # The directory attributes may predate the completed download.
+                        item = {**item, "cloud_pending": False}
+                    if (
+                        row is not None
+                        and row["status"] == "local"
+                        and row["size"] == item["size"]
+                        and item["cloud_pending"]
+                        and previous.get(rel, (0, None))[1] != "local"
+                    ):
+                        # The monitor completed this file while the scan was running.
+                        # Recheck fresh attributes instead of undoing that newer result.
+                        self.inventory_wake.set()
+                        continue
                     if row is None:
                         row = self.new_row(item)
                         self.files[rel] = row
@@ -254,7 +277,6 @@ class Model:
                             cooldown_until=0,
                         )
                         changed += 1
-                    details = metadata.get(rel)
                     if details:
                         if item["cloud_pending"]:
                             self.downloads.remember_pending(rel, details)
@@ -457,13 +479,72 @@ class Model:
             self.control[action] = self.control.get(action, 0) + 1
             self.save_control()
 
+    def certificate_status(self):
+        from cryptography import x509
+
+        certificate = x509.load_pem_x509_certificate(
+            (settings.CA_DIR / "mitmproxy-ca-cert.pem").read_bytes()
+        )
+        return {
+            "trusted": winops.ca_present(),
+            "approved": settings.certificate_approved(),
+            "automatic": settings.read().get("certificate_auto", True),
+            "scope": settings.certificate_scope(),
+            "thumbprint": THUMB,
+            "expires": certificate.not_valid_after_utc.isoformat(),
+            "job": getattr(self, "certificate_job", None),
+        }
+
+    def certificate_action(self, action):
+        if action not in ("install", "remove"):
+            raise ValueError("Неизвестное действие с сертификатом")
+        with self.lock:
+            if self.session().get("phase") not in ("idle", "stopped"):
+                raise ValueError("Сначала выключите прокси")
+            if self.certificate_job and self.certificate_job["busy"]:
+                raise ValueError("Операция с сертификатом уже выполняется")
+            if action == "install" and not settings.certificate_approved():
+                raise ValueError("Сначала подтвердите сертификат при включении прокси")
+            self.certificate_job = {"action": action, "busy": True, "error": None}
+            scope = settings.certificate_scope()
+
+        def work():
+            error = None
+            try:
+                if action == "install":
+                    if not winops.ca_present(scope=scope):
+                        settings.preference(certificate_preexisting=False)
+                        managed = dict(settings.read().get("managed_certificates", {}))
+                        managed[scope] = THUMB
+                        settings.preference(managed_certificates=managed)
+                        winops.add_ca(scope=scope)
+                elif not winops.remove_ca(scope=scope):
+                    raise OSError("Не удалось удалить сертификат прокси")
+            except (OSError, ValueError) as exc:
+                error = redact_text(str(exc))
+            with self.lock:
+                self.certificate_job = {"action": action, "busy": False, "error": error}
+            self.updates.changed("state")
+
+        self.certificate_thread = threading.Thread(target=work, daemon=True)
+        self.certificate_thread.start()
+
+    def cleanup_managed_certificates(self):
+        managed = dict(settings.read().get("managed_certificates", {}))
+        for scope, thumb in list(managed.items()):
+            if thumb == THUMB and winops.remove_ca(thumb, scope=scope):
+                managed.pop(scope)
+                settings.preference(managed_certificates=managed)
+
     def start(self):
         with self.lock:
+            if self.certificate_job and self.certificate_job["busy"]:
+                raise ValueError("Операция с сертификатом уже выполняется")
             if ROOT is not None and CLIENT is not None:
                 settings.validate(str(ROOT), str(CLIENT))
             if ROOT is None or CLIENT is None:
                 raise ValueError("Сначала настройте папку синхронизации и путь к приложению")
-            if settings.read().get("consented_thumbprint") != THUMB:
+            if not settings.certificate_approved():
                 raise ValueError("Подтвердите временное доверие сертификату в панели")
             if self.worker is not None and self.worker.poll() is None:
                 raise ValueError("Сеанс уже работает")
@@ -560,13 +641,24 @@ class Model:
             kind = event.get("event")
             if kind == "traffic":
                 try:
-                    self.traffic.add(event.get("record"))
+                    self.counters["network_bytes"] += self.traffic.add(event.get("record")) or 0
                     self.recovery.observe(event.get("record") or {})
                 except OSError as exc:
                     self.log_error = "Не удалось записать запросы: " + type(exc).__name__
                 return
             rel = event.get("file")
             row = self.files.get(rel)
+            if kind == "http":
+                identity = event.get("flow")
+                if identity in self.seen_http:
+                    return
+                self.seen_http[identity] = True
+                if len(self.seen_http) > 30000:
+                    self.seen_http.popitem(last=False)
+                if event.get("status") == 500:
+                    self.counters["http500"] += 1
+                if not rel:
+                    return
             if rel and row is None:
                 self.counters["unmatched"] += 1
                 return
@@ -640,16 +732,9 @@ class Model:
                 count = event.get("bytes", 0)
                 if isinstance(count, int) and 0 <= count <= 1024**3:
                     row["network_bytes"] += count
-                    self.counters["network_bytes"] += count
                 if row["status"] not in ("deferred", "deferring", "restoring", "local"):
                     row["status"] = "downloading"
             elif kind == "http":
-                identity = event.get("flow")
-                if identity in self.seen_http:
-                    return
-                self.seen_http[identity] = True
-                if len(self.seen_http) > 30000:
-                    self.seen_http.popitem(last=False)
                 code = event.get("status")
                 row["last_http"] = code
                 row["last_host"] = event.get("host")
@@ -660,7 +745,6 @@ class Model:
                 if code == 500:
                     row["http500"] += 1
                     row["consecutive_500"] += 1
-                    self.counters["http500"] += 1
                     if row["status"] not in ("local", "deferred", "deferring", "restoring"):
                         row["status"] = "http500"
                     self.log("http500", "HTTP 500 от сервера Яндекса", rel)
@@ -903,7 +987,8 @@ class Model:
                 "events": list(self.events)[:30],
                 "cleanup": self.latest_cleanup,
                 "certificate_thumbprint": THUMB,
-                "certificate_approved": settings.read().get("consented_thumbprint") == THUMB,
+                "certificate_approved": settings.certificate_approved(),
+                "certificate_scope": settings.certificate_scope(),
                 "preview_context": self.preview_context,
                 "tls": self.tls,
                 "log_error": self.log_error,
@@ -1082,6 +1167,23 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/state":
             self.reply(200, ACTIVE.snapshot())
             return
+        if u.path == "/api/certificate":
+            try:
+                self.reply(200, ACTIVE.certificate_status())
+            except (OSError, ValueError) as exc:
+                self.reply(503, {"error": redact_text(str(exc))})
+            return
+        if u.path == "/api/certificate/file":
+            der = ssl.PEM_cert_to_DER_cert(
+                (settings.CA_DIR / "mitmproxy-ca-cert.pem").read_text(encoding="utf-8")
+            )
+            self.reply(
+                200,
+                der,
+                "application/pkix-cert",
+                {"Content-Disposition": 'attachment; filename="YandexDiskProxy.cer"'},
+            )
+            return
         if u.path == "/api/monitoring":
             query = urllib.parse.parse_qs(u.query)
             try:
@@ -1181,6 +1283,9 @@ class Handler(BaseHTTPRequestHandler):
             "/monitoring": ("monitoring.html", "text/html; charset=utf-8"),
             "/monitoring.js": ("monitoring.js", "text/javascript; charset=utf-8"),
             "/monitoring.css": ("monitoring.css", "text/css; charset=utf-8"),
+            "/settings": ("settings.html", "text/html; charset=utf-8"),
+            "/settings.js": ("settings.js", "text/javascript; charset=utf-8"),
+            "/settings.css": ("settings.css", "text/css; charset=utf-8"),
         }
         if u.path in static:
             name, kind = static[u.path]
@@ -1242,8 +1347,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200, image, mime, {"Cross-Origin-Resource-Policy": "same-origin"})
                 return
             elif self.path == "/api/start":
-                if data.get("accepted_thumbprint") == THUMB:
-                    settings.preference(consented_thumbprint=THUMB)
+                if (
+                    data.get("accepted_thumbprint") == THUMB
+                    and data.get("accepted_certificate_scope") == settings.certificate_scope()
+                ):
+                    settings.preference(
+                        consented_thumbprint=THUMB,
+                        consented_certificate_scope=settings.certificate_scope(),
+                        certificate_preexisting=winops.ca_present(),
+                    )
                 ACTIVE.start()
             elif self.path == "/api/setup":
                 with ACTIVE.inventory_lock, ACTIVE.lock:
@@ -1332,6 +1444,26 @@ class Handler(BaseHTTPRequestHandler):
                         recover_session(ACTIVE.directory)
             elif self.path == "/api/config":
                 ACTIVE.set_mode(data.get("mode"))
+            elif self.path == "/api/certificate/settings":
+                with ACTIVE.lock:
+                    automatic = data.get("automatic")
+                    if not isinstance(automatic, bool):
+                        raise ValueError("Укажите режим установки сертификата")
+                    scope = data.get("scope", settings.certificate_scope())
+                    if scope not in ("current_user", "local_machine"):
+                        raise ValueError("Неизвестное хранилище сертификата")
+                    if scope != settings.certificate_scope():
+                        if ACTIVE.session().get("phase") not in ("idle", "stopped"):
+                            raise ValueError("Сначала выключите прокси")
+                        if ACTIVE.certificate_job and ACTIVE.certificate_job["busy"]:
+                            raise ValueError("Операция с сертификатом уже выполняется")
+                        settings.preference(
+                            certificate_scope=scope,
+                            certificate_preexisting=winops.ca_present(scope=scope),
+                        )
+                    settings.preference(certificate_auto=automatic)
+            elif self.path == "/api/certificate/action":
+                ACTIVE.certificate_action(data.get("action"))
             elif self.path in ("/api/defer", "/api/retry"):
                 with ACTIVE.lock:
                     ACTIVE.command(
@@ -1399,11 +1531,7 @@ def main():
     )
     if not args.no_browser:
         webbrowser.open(URL)
-    if (
-        not args.no_mitm
-        and settings.read().get("enabled")
-        and settings.read().get("consented_thumbprint") == THUMB
-    ):
+    if not args.no_mitm and settings.read().get("enabled") and settings.certificate_approved():
         ACTIVE.start()
     try:
         server.serve_forever(poll_interval=0.3)
@@ -1412,6 +1540,8 @@ def main():
     finally:
         ACTIVE.thumbnails.close()
         ACTIVE.recovery.close()
+        if ACTIVE.certificate_thread:
+            ACTIVE.certificate_thread.join(timeout=60)
         try:
             ACTIVE.capture_statistics()
         except (OSError, ValueError, sqlite3.Error):
@@ -1427,6 +1557,10 @@ def main():
                 ACTIVE.worker.wait(timeout=35)
             except subprocess.TimeoutExpired:
                 print("Recovery is still running in a separate process.", flush=True)
+        try:
+            ACTIVE.cleanup_managed_certificates()
+        except (OSError, ValueError):
+            print("Certificate cleanup needs another attempt from Settings.", flush=True)
         try:
             ACTIVE.traffic.flush(force=True)
         except OSError:

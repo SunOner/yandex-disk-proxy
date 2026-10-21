@@ -1,4 +1,4 @@
-"""Owns client-scoped TLS trust, proxy and reversible pin changes.
+"""Owns consented Windows TLS trust, proxy and reversible pin changes.
 The worker survives closing the panel console long enough to restore the PC.
 """
 
@@ -25,7 +25,9 @@ from winops import (
     PROXY_PY,
     ROOT,
     THUMB,
+    add_ca,
     atomic,
+    ca_present,
     can_defer,
     client_pids,
     created_ticks,
@@ -40,7 +42,7 @@ from winops import (
 
 
 def validate_client_certificate():
-    if settings.read().get("consented_thumbprint") != THUMB:
+    if not settings.certificate_approved():
         raise ValueError("Подтвердите сертификат Диска в панели")
     if settings.fingerprint(CA_DIR) != THUMB:
         raise ValueError("Сертификат Диска изменился после подтверждения")
@@ -61,7 +63,7 @@ def main():
         "proxy_pid": None,
         "client_pid": None,
         "ca_owned": False,
-        "certificate_scope": "client",
+        "certificate_scope": settings.certificate_scope(),
         "certificate_ready": False,
         "client_changed": False,
         "started": time.time(),
@@ -113,6 +115,23 @@ def main():
         atomic(ledger_path, ledger)
         event("restored", file=rel)
 
+    def ensure_trust():
+        validate_client_certificate()
+        saved = settings.read()
+        if (
+            saved.get("certificate_preexisting") is False
+            or saved.get("managed_certificates", {}).get(state["certificate_scope"]) == THUMB
+        ):
+            # A certificate manually imported after this consent is temporary too.
+            record(ca_owned=True)
+        if not ca_present():
+            if settings.read().get("certificate_auto", True) is False:
+                raise ValueError("Включите автоматическую установку сертификата в настройках")
+            # Persist ownership before changing the store, including failure/crash cleanup.
+            record(ca_owned=True)
+            add_ca()
+        record(ca_trusted=True, certificate_ready=True)
+
     def start_proxy():
         ready_path = session_dir / "proxy-ready"
         ready_path.unlink(missing_ok=True)
@@ -161,9 +180,9 @@ def main():
                     raise RuntimeError("Proxy port is already in use")
         atomic(ledger_path, ledger)
         record()
-        validate_client_certificate()
-        record(stage="certificate", certificate_ready=True)
-        event("ca_added", scope="client")
+        record(stage="certificate")
+        ensure_trust()
+        event("ca_added", scope=state["certificate_scope"], trusted=True)
         record(stage="proxy")
         env = os.environ.copy()
         env["YDM_SESSION_DIR"] = str(session_dir)
@@ -234,7 +253,7 @@ def main():
                     continue
                 handled_actions[action] = requested
                 try:
-                    validate_client_certificate()
+                    ensure_trust()
                     for pid in client_pids():
                         stop_exact(pid, CLIENT)
                     client = launch_client(True)
@@ -279,9 +298,12 @@ def main():
             if time.monotonic() - last_trust >= 15:
                 try:
                     validate_client_certificate()
-                    if state.get("certificate_ready") is False:
+                    trusted = ca_present()
+                    if trusted and state.get("ca_trusted") is False:
                         event("ca_restored")
-                    record(certificate_ready=True, ca_checked_at=time.time())
+                    elif not trusted and state.get("ca_trusted") is not False:
+                        event("ca_missing")
+                    record(certificate_ready=trusted, ca_trusted=trusted, ca_checked_at=time.time())
                 except (OSError, ValueError) as exc:
                     record(certificate_ready=False, ca_checked_at=time.time())
                     event("ca_check_error", reason=type(exc).__name__)

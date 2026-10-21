@@ -328,6 +328,14 @@ class Tracker:
         self.diagnostic(flow, "response")
         observer = self.capture_stream(flow, "received")
         flow.response.stream = observer
+        if not flow.metadata.get("ydm_synthetic"):
+            self.emit(
+                "http",
+                file=flow.metadata.get("ydm_file") or self.label(flow),
+                flow=flow.id,
+                host=flow.request.host,
+                status=flow.response.status_code,
+            )
         location = flow.response.headers.get("location")
         if location and flow.response.status_code in (301, 302, 303, 307, 308):
             target = urllib.parse.urljoin(flow.request.url, location)
@@ -346,7 +354,6 @@ class Tracker:
         if flow.metadata.get("ydm_synthetic"):
             return
         status = flow.response.status_code
-        self.emit("http", file=rel, flow=flow.id, host=flow.request.host, status=status)
         location = flow.response.headers.get("location")
         if location and status in (301, 302, 303, 307, 308):
             target = urllib.parse.urljoin(flow.request.url, location)

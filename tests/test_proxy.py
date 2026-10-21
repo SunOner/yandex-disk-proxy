@@ -105,7 +105,10 @@ class Tracking(unittest.TestCase):
         self.t.responseheaders(f)
         self.assertNotIn("ydm_synthetic", f.metadata)
         self.assertEqual(f.response.status_code, 500)
-        self.assertTrue(all(item["event"] == "traffic" for item in self.t.outbox.queue))
+        self.assertTrue(all(item["event"] in ("traffic", "http") for item in self.t.outbox.queue))
+        self.assertEqual(
+            [item["status"] for item in self.t.outbox.queue if item["event"] == "http"], [500]
+        )
 
     def test_compressed_api_response_preserves_mapping(self):
         href = "https://downloader.disk.yandex.ru/disk/private?token=SECRET"
@@ -153,6 +156,16 @@ class Tracking(unittest.TestCase):
 
 
 class Guardrails(unittest.TestCase):
+    def test_unmatched_http_errors_are_counted_without_changing_files(self):
+        m = model()
+        for rel in (None, "unknown.bin"):
+            event = {"event": "http", "file": rel, "flow": str(rel), "status": 500}
+            m.event(event)
+            m.event(event)
+        self.assertEqual(m.counters["http500"], 2)
+        self.assertEqual(m.files["test/a.bin"]["http500"], 0)
+        m.command.assert_not_called()
+
     def test_three_real_500s_trigger_one_defer(self):
         m = model()
         for i in range(2):
