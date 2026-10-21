@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.1
+
+- Save immediately shows progress and prevents duplicate submissions while checking the selected paths.
+- The initial file scan runs in the background after settings are saved.
+- Added a status indicator for the initial scan and notifications for scan failures.
+
 ## 0.8.0
 
 - Added file previews for supported images, videos and PDFs.
