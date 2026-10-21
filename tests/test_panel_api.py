@@ -78,6 +78,22 @@ class PanelAccess(unittest.TestCase):
                                 timeout=3,
                             )
                         self.assertEqual(error.exception.code, 403)
+                    request = urllib.request.Request(
+                        url + "/api/rescan",
+                        data=b"{}",
+                        headers={
+                            "Origin": url,
+                            "X-Panel-Nonce": server.NONCE,
+                            "Content-Type": "application/json",
+                        },
+                    )
+                    self.assertTrue(json.load(urllib.request.urlopen(request, timeout=3))["ok"])
+                    self.assertTrue(model.inventory_wake.is_set())
+                    with self.assertRaises(urllib.error.HTTPError) as error:
+                        urllib.request.urlopen(
+                            urllib.request.Request(url + "/api/rescan", data=b"{}"), timeout=3
+                        )
+                    self.assertEqual(error.exception.code, 403)
                 finally:
                     httpd.shutdown()
                     thread.join()

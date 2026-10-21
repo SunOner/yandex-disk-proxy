@@ -451,6 +451,26 @@ class Recovery:
                 self.save()
             self.start_workers()
 
+    def cancel_paths(self, paths):
+        with self.lock:
+            changed = False
+            for path in paths:
+                job = self.jobs.get(path)
+                if job and job["status"] in (
+                    "queued",
+                    "fetching",
+                    "downloading",
+                    "retry",
+                    "waiting_session",
+                    "paused",
+                ):
+                    job["cancel"] = True
+                    if job["status"] not in ("fetching", "downloading"):
+                        job["status"] = "cancelled"
+                    changed = True
+            if changed:
+                self.save()
+
     def check(self, rel):
         if self.closed:
             raise DownloadError("Панель закрывается")

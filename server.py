@@ -16,7 +16,6 @@ import urllib.request
 import uuid
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 
 import runtime
 import settings
@@ -25,6 +24,7 @@ import winops
 from diagnostics import JsonLog, Traffic, redact_text
 from downloads import History
 from fetcher import DownloadError, Recovery
+from inventory import scan
 from winops import (
     APP,
     CLIENT,
@@ -82,6 +82,9 @@ class Model:
         self.latest_cleanup = None
         self.reported_stop = None
         self.downloads = History(history_path())
+        self.inventory_lock = threading.RLock()
+        self.inventory_wake = threading.Event()
+        self.inventory = {"scanning": False, "updated_at": None, "interval_seconds": 10}
         self.refresh_inventory()
         self.init_recovery()
 
@@ -102,61 +105,150 @@ class Model:
         )
 
     def refresh_inventory(self):
-        if ROOT is None or not ROOT.is_dir():
+        if ROOT is None or not self.inventory_lock.acquire(blocking=False):
             return
-        rows = []
-        for parent, dirs, names in os.walk(ROOT):
-            dirs[:] = [name for name in dirs if name != ".sync"]
-            for name in names:
-                try:
-                    p = Path(parent) / name
-                    s = p.stat()
-                    a = s.st_file_attributes
-                    if a & 0x80000:
-                        rel = p.relative_to(ROOT).as_posix()
-                        rows.append(
-                            {
-                                "id": file_id(rel),
-                                "path": rel,
-                                "name": name,
-                                "size": s.st_size,
-                                "status": "waiting" if a & 0x400000 else "local",
-                                "validated": 0 if a & 0x400000 else s.st_size,
-                                "on_disk": 0 if a & 0x400000 else s.st_size,
-                                "attempts": 0,
-                                "http500": 0,
-                                "consecutive_500": 0,
-                                "network_bytes": 0,
-                                "blocked": 0,
-                                "last_http": None,
-                                "api_http": None,
-                                "download_http": None,
-                                "last_host": None,
-                                "last_time": None,
-                                "cooldown_until": 0,
-                            }
-                        )
-                except OSError:
-                    pass
-        with self.lock:
-            for row in rows:
-                self.files.setdefault(row["path"], row)
-                if row["status"] != "local" or row["path"] in self.downloads.pending:
+        started = time.monotonic()
+        removed = []
+        try:
+            with self.lock:
+                self.inventory["scanning"] = True
+                previous = {p: (r["size"], r["status"]) for p, r in self.files.items()}
+                pending = dict(self.downloads.pending)
+            result = scan(ROOT)
+            metadata = {}
+            # Cloud Files metadata is read outside the model lock; requests and
+            # the panel remain responsive even when thousands of pins arrive.
+            for rel, item in result.selected.items():
+                if (
+                    item["cloud_pending"]
+                    and (rel not in pending or pending[rel]["size"] != item["size"])
+                ) or (
+                    not item["cloud_pending"]
+                    and (rel in pending or previous.get(rel, (0, "local"))[1] != "local")
+                ):
                     try:
-                        metadata = info(row["path"])
-                        if row["status"] == "local":
-                            if self.downloads.complete_if_pending(row["path"], metadata):
-                                self.log(
-                                    "local",
-                                    "Файл скачан между запусками панели",
-                                    row["path"],
-                                )
-                        else:
-                            self.downloads.remember_pending(row["path"], metadata)
+                        metadata[rel] = info(rel)
                     except (OSError, ValueError):
                         pass
-            self.downloads.save()
-        self.log("inventory", f"Список готов: {len(rows)} файлов отмечены для хранения на ПК")
+            added = changed = 0
+            with self.lock:
+                for rel, item in result.selected.items():
+                    row = self.files.get(rel)
+                    if row is None:
+                        row = self.new_row(item)
+                        self.files[rel] = row
+                        added += 1
+                    elif row["size"] != item["size"] or (
+                        item["cloud_pending"] and row["status"] == "local"
+                    ):
+                        row.update(
+                            size=item["size"],
+                            status="waiting",
+                            on_disk=0,
+                            validated=0,
+                            cooldown_until=0,
+                        )
+                        changed += 1
+                    details = metadata.get(rel)
+                    if details:
+                        if item["cloud_pending"]:
+                            self.downloads.remember_pending(rel, details)
+                        elif details["validated"] >= details["size"] and details["modified"] == 0:
+                            was_pending = row["status"] != "local"
+                            row.update(
+                                status="local",
+                                size=details["size"],
+                                on_disk=details["on_disk"],
+                                validated=details["validated"],
+                                cooldown_until=0,
+                            )
+                            if self.downloads.complete_if_pending(
+                                rel,
+                                details,
+                                save=False,
+                                via_proxy=self.session().get("phase") == "active"
+                                if rel in previous
+                                else None,
+                            ):
+                                self.log("local", "Файл скачан", rel)
+                            if was_pending:
+                                changed += 1
+                for rel, row in list(self.files.items()):
+                    if rel in result.selected or result.uncertain(rel):
+                        continue
+                    # The proxy's own temporary unpin is still part of the
+                    # user's selection; a deleted file is not.
+                    if rel in result.seen and row["status"] in (
+                        "deferred",
+                        "deferring",
+                        "restoring",
+                    ):
+                        continue
+                    removed.append(rel)
+                    self.files.pop(rel)
+                    self.downloads.pending.pop(rel, None)
+                if metadata or removed:
+                    self.downloads.save()
+                self.inventory.update(
+                    scanning=False,
+                    updated_at=time.time(),
+                    duration_ms=round((time.monotonic() - started) * 1000),
+                    added=added,
+                    removed=len(removed),
+                    unavailable=len(result.unavailable),
+                    selected=len(self.files),
+                )
+                if added or removed or changed or self.inventory.get("first") is not True:
+                    self.log(
+                        "inventory",
+                        f"Список обновлён: +{added}, −{len(removed)}; всего {len(self.files)}",
+                        added=added,
+                        removed=len(removed),
+                        changed=changed,
+                        unavailable=len(result.unavailable),
+                    )
+                self.inventory["first"] = True
+            if hasattr(self, "recovery"):
+                self.recovery.cancel_paths(removed)
+        finally:
+            with self.lock:
+                self.inventory["scanning"] = False
+            self.inventory_lock.release()
+
+    @staticmethod
+    def new_row(item):
+        local = not item["cloud_pending"]
+        return {
+            "id": file_id(item["path"]),
+            "path": item["path"],
+            "name": item["name"],
+            "size": item["size"],
+            "status": "local" if local else "waiting",
+            "validated": item["size"] if local else 0,
+            "on_disk": item["size"] if local else 0,
+            "attempts": 0,
+            "http500": 0,
+            "consecutive_500": 0,
+            "network_bytes": 0,
+            "blocked": 0,
+            "last_http": None,
+            "api_http": None,
+            "download_http": None,
+            "last_host": None,
+            "last_time": None,
+            "cooldown_until": 0,
+        }
+
+    def inventory_loop(self):
+        while not self.closed:
+            self.inventory_wake.wait(10)
+            self.inventory_wake.clear()
+            if self.closed:
+                break
+            try:
+                self.refresh_inventory()
+            except (OSError, ValueError) as exc:
+                self.log("inventory_error", "Не удалось обновить список файлов", reason=str(exc))
 
     def log(self, kind, message, file=None, **details):
         with self.lock:
@@ -628,6 +720,7 @@ class Model:
                     row["size"] for row in self.files.values() if row["status"] != "local"
                 ),
                 "downloads": self.downloads.summary(),
+                "inventory": dict(self.inventory),
                 "recovery": self.recovery.summary(),
                 "network": self.traffic.summary(),
                 "counters": dict(self.counters),
@@ -842,7 +935,7 @@ class Handler(BaseHTTPRequestHandler):
                     settings.preference(consented_thumbprint=THUMB)
                 ACTIVE.start()
             elif self.path == "/api/setup":
-                with ACTIVE.lock:
+                with ACTIVE.inventory_lock, ACTIVE.lock:
                     if ACTIVE.session().get("phase") not in ("idle", "stopped"):
                         raise ValueError("Сначала остановите прокси и завершите восстановление")
                     if any(
@@ -866,6 +959,8 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/request-detail":
                 self.reply(200, ACTIVE.traffic.detail(data.get("id"), data.get("reveal") is True))
                 return
+            elif self.path == "/api/rescan":
+                ACTIVE.inventory_wake.set()
             elif self.path == "/api/recovery/enqueue":
                 ACTIVE.recovery.enqueue(data.get("file", ""), data.get("url"))
             elif self.path == "/api/recovery/batch":
@@ -946,6 +1041,7 @@ def main():
     if unresolved:
         ACTIVE.directory = unresolved[-1]
     threading.Thread(target=ACTIVE.monitor, daemon=True).start()
+    threading.Thread(target=ACTIVE.inventory_loop, daemon=True).start()
     print(
         "\nЯНДЕКС ДИСК · ПРОКСИ\n"
         + URL
@@ -968,6 +1064,7 @@ def main():
         ACTIVE.recovery.close()
         ACTIVE.stop()
         ACTIVE.closed = True
+        ACTIVE.inventory_wake.set()
         if ACTIVE.worker:
             try:
                 ACTIVE.worker.wait(timeout=35)

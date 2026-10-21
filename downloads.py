@@ -29,15 +29,15 @@ class History:
     def save(self):
         atomic(self.path, self.data)
 
-    def complete_if_pending(self, rel, metadata):
+    def complete_if_pending(self, rel, metadata, save=True, via_proxy=None):
         before = self.pending.get(rel)
         if not before or any(
             before[key] != metadata[key] for key in ("file_id", "root_id", "size")
         ):
             return False
-        return self.record(rel, metadata, None)
+        return self.record(rel, metadata, via_proxy, save=save)
 
-    def record(self, rel, metadata, via_proxy, confirmed_at=None):
+    def record(self, rel, metadata, via_proxy, confirmed_at=None, save=True):
         if metadata["validated"] < metadata["size"] or metadata["modified"] != 0:
             return False
         identity = f"{metadata['root_id']}:{metadata['file_id']}:{metadata['size']}"
@@ -55,7 +55,8 @@ class History:
         self.data["completed"][identity] = row
         self.by_path[rel] = row
         self.pending.pop(rel, None)
-        atomic(self.path, self.data)
+        if save:
+            atomic(self.path, self.data)
         return True
 
     def summary(self):

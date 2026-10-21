@@ -49,7 +49,7 @@ async function main() {
   requests.shift().reject(new Error('offline'));
   await tick();
   assert.equal(element('session-title').textContent,'Нет связи с панелью');
-  for(const id of ['start','stop','settings','mode']) assert.equal(element(id).disabled,true);
+  for(const id of ['start','stop','settings','mode','rescan']) assert.equal(element(id).disabled,true);
   vm.runInContext('refresh()',context);
   respond(requests.shift(),state('active'));
   await tick();
@@ -63,6 +63,11 @@ async function main() {
   vm.runInContext("sessionView({session:{phase:'active',ca_trusted:false},tls:{client:{ok:false}},mode:'defer'})",context);
   assert.equal(element('tls-warning').hidden,false);
   assert.equal(element('repair-ca').hidden,false);
+  vm.runInContext("sessionView({session:{phase:'active'},mode:'defer',configured:true,inventory:{scanning:true}})",context);
+  assert.equal(element('rescan').disabled,true);
+  assert.equal(element('rescan').textContent,'Обновление списка…');
+  vm.runInContext("sessionView({session:{phase:'active'},mode:'defer',configured:true,inventory:{scanning:false,updated_at:1792574000}})",context);
+  assert.equal(element('rescan').disabled,false);
   console.log('UI: stale results rejected; offline controls disabled; reconnect recovered; removed elements unused.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

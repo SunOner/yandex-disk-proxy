@@ -91,6 +91,15 @@ function sessionView(s) {
           : "Прокси выключен";
   $("start").disabled = active || working;
   $("settings").disabled = active || working;
+  $("rescan").disabled = !!s.inventory?.scanning || !s.configured;
+  $("rescan").textContent = s.inventory?.scanning
+    ? "Обновление списка…"
+    : "Обновить список";
+  $("rescan").title = s.inventory?.updated_at
+    ? "Последнее обновление: " +
+      new Date(s.inventory.updated_at * 1000).toLocaleTimeString("ru-RU") +
+      ". Автоматически каждые 10 секунд."
+    : "Проверить отметки хранения в Windows";
   $("mode").disabled = working;
   $("start").textContent =
     phase === "cleanup_required" ? "↺ Восстановить" : "▶ Включить прокси";
@@ -327,7 +336,7 @@ async function refresh() {
     connected = false;
     $("session-title").textContent = "Нет связи с панелью";
     $("session-led").className = "session-led offline";
-    for (const id of ["start", "stop", "settings", "mode"])
+    for (const id of ["start", "stop", "settings", "mode", "rescan"])
       $(id).disabled = true;
   } finally {
     busy = false;
@@ -388,6 +397,16 @@ $("mode").addEventListener("change", (e) =>
     .then(() => refresh())
     .catch((e) => toast(e.message)),
 );
+$("rescan").addEventListener("click", async () => {
+  $("rescan").disabled = true;
+  try {
+    await action("/api/rescan");
+    toast("Обновление списка запрошено");
+    await refresh();
+  } catch (e) {
+    toast(e.message);
+  }
+});
 function openSetup() {
   $("setup-error").hidden = true;
   $("setup-root").value = snapshot.root;
