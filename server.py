@@ -27,7 +27,7 @@ import settings
 import windows_ui
 import winops
 from diagnostics import JsonLog, Traffic, redact_text
-from downloads import History
+from downloads import CompletionEstimate, History
 from inventory import scan
 from metrics import INTERVAL as STATS_INTERVAL
 from metrics import Metrics
@@ -110,6 +110,7 @@ class Model:
         self.init_statistics()
 
     def init_statistics(self):
+        self.completion_estimate = CompletionEstimate()
         try:
             self.metrics = Metrics(
                 RUNTIME / "statistics" / (file_id(str(ROOT or "unconfigured")) + ".sqlite3")
@@ -122,9 +123,14 @@ class Model:
 
     def capture_statistics(self, initial=False):
         with self.lock:
+            native = self.downloads.summary()
+            session = self.session()
+            self.completion_estimate.sample(
+                native,
+                session.get("phase") == "active" and session.get("client_attached") is True,
+            )
             if self.metrics is None:
                 return
-            native = self.downloads.summary()
             counts = collections.Counter(row["status"] for row in self.files.values())
             current = {
                 "pending_files": len(self.files) - counts["local"],
@@ -616,8 +622,13 @@ class Model:
                 self.metrics.undo_display_reset(revision)
                 result = {}
             else:
+                current = (
+                    self.downloads.summary()["count"]
+                    if counter == "native_files"
+                    else self.counters.get(counter, 0)
+                )
                 result = {
-                    "revision": self.metrics.reset_display(counter, self.counters.get(counter, 0)),
+                    "revision": self.metrics.reset_display(counter, current),
                     "context": file_id(str(ROOT or "unconfigured")),
                 }
             self.updates.changed("state")
@@ -1058,6 +1069,12 @@ class Model:
     def snapshot(self):
         with self.lock:
             counts = collections.Counter(row["status"] for row in self.files.values())
+            downloads = self.downloads.summary()
+            session = self.session()
+            pending = len(self.files) - counts["local"]
+            pending_bytes = sum(
+                row["size"] for row in self.files.values() if row["status"] != "local"
+            )
             return {
                 "app": runtime.APP_ID,
                 "product_name": runtime.PRODUCT_NAME,
@@ -1072,19 +1089,25 @@ class Model:
                 "mode": self.mode,
                 "threshold": self.threshold,
                 "cooldown": self.cooldown,
-                "session": self.session(),
+                "session": session,
                 "counts": dict(counts),
                 "total": len(self.files),
-                "pending": sum(1 for row in self.files.values() if row["status"] != "local"),
-                "pending_bytes": sum(
-                    row["size"] for row in self.files.values() if row["status"] != "local"
+                "pending": pending,
+                "pending_bytes": pending_bytes,
+                "completion_estimate": self.completion_estimate.result(
+                    pending,
+                    pending_bytes,
+                    session.get("phase") == "active" and session.get("client_attached") is True,
+                    self.inventory.get("updated_at") is not None,
                 ),
-                "downloads": self.downloads.summary(),
+                "downloads": downloads,
                 "inventory": dict(self.inventory),
                 "preview": self.preview_session.summary(),
                 "network": self.traffic.summary(),
                 "counters": dict(self.counters),
-                "display_counters": self.metrics.displayed(self.counters)
+                "display_counters": self.metrics.displayed(
+                    {**self.counters, "native_files": downloads["count"]}
+                )
                 if self.metrics
                 else dict(self.counters),
                 "events": list(self.events)[:30],

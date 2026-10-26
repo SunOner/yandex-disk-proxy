@@ -440,7 +440,7 @@ input {
 }
 .metrics {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 24px;
 }
@@ -663,7 +663,7 @@ body.board-open {
   gap: clamp(14px, 1.8vw, 28px);
 }
 .board-primary {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 .board-secondary {
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -738,6 +738,9 @@ body.board-open {
 }
 .board-deferred strong {
   color: #edca77;
+}
+.board-card.board-eta strong {
+  font-size: clamp(22px, 2.8vw, 62px);
 }
 .board-footer {
   display: flex;
@@ -1422,7 +1425,10 @@ dd {
 }
 @media (max-width: 1450px) {
   .metrics {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .metrics .metric-eta {
+    grid-column: span 2;
   }
   .workspace {
     grid-template-columns: minmax(0, 1fr);

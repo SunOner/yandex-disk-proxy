@@ -111,7 +111,7 @@ class Statistics(unittest.TestCase):
         revision = self.metrics.reset_display("http500", 12)
         self.assertEqual(
             self.metrics.displayed({"http500": 14, "network_bytes": 950}),
-            {"http500": 2, "network_bytes": 950},
+            {"http500": 2, "network_bytes": 950, "native_files": 0},
         )
         after = self.metrics.read("1h", now=self.now)
         self.assertEqual(after["points"], before["points"])
@@ -143,7 +143,8 @@ class Statistics(unittest.TestCase):
             self.metrics.undo_display_reset(first)
         self.metrics.undo_display_reset(second)
         self.assertEqual(
-            self.metrics.displayed(self.metrics.counters), {"http500": 0, "network_bytes": 900}
+            self.metrics.displayed(self.metrics.counters),
+            {"http500": 0, "network_bytes": 900, "native_files": 0},
         )
         with self.assertRaises(ValueError):
             self.metrics.reset_display("deferred", 12)

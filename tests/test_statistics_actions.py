@@ -95,6 +95,46 @@ class StatisticsActions(unittest.TestCase):
         self.model.directory = Path(self.temp.name) / "session"
         self.model.directory.mkdir()
 
+    def test_snapshot_estimate_uses_current_inventory_and_attachment(self):
+        self.model.session = Mock(return_value={"phase": "active", "client_attached": True})
+        self.model.inventory["updated_at"] = 1
+        self.model.files = {"a": {"status": "deferred", "size": 1000}}
+        estimate = self.model.completion_estimate
+        with patch("downloads.time.monotonic", return_value=100):
+            estimate.sample({"count": 0, "bytes": 0}, True, now=70)
+            estimate.sample({"count": 2, "bytes": 1000}, True, now=100)
+            self.assertEqual(self.model.snapshot()["completion_estimate"]["seconds"], 30)
+            self.model.session.return_value["client_attached"] = False
+            self.assertEqual(self.model.snapshot()["completion_estimate"]["status"], "paused")
+            self.model.inventory["updated_at"] = None
+            self.assertEqual(self.model.snapshot()["completion_estimate"]["status"], "scanning")
+
+    def test_download_reset_is_persistent_and_keeps_history_and_estimate(self):
+        history = self.model.downloads
+        metadata = {"size": 100, "validated": 100, "modified": 0, "file_id": 1, "root_id": 2}
+        history.record("first.txt", metadata, True)
+        history.record("second.txt", {**metadata, "file_id": 2}, True)
+        self.model.capture_statistics()
+        before = copy.deepcopy(history.data)
+        baseline = list(self.model.completion_estimate.points)
+        reset = self.post("reset", {"counter": "native_files"})
+        self.assertEqual(self.model.snapshot()["display_counters"]["native_files"], 0)
+        self.assertEqual(history.data, before)
+        self.assertEqual(list(self.model.completion_estimate.points), baseline)
+        history.record("third.txt", {**metadata, "file_id": 3}, True)
+        self.model.capture_statistics()
+        self.assertEqual(self.model.snapshot()["display_counters"]["native_files"], 1)
+        from metrics import Metrics
+
+        reopened = Metrics(self.model.metrics.path)
+        try:
+            self.assertEqual(reopened.displayed({"native_files": 3})["native_files"], 1)
+        finally:
+            reopened.close()
+        self.post("undo", {"revision": reset["revision"], "context": reset["context"]})
+        self.assertEqual(self.model.snapshot()["display_counters"]["native_files"], 3)
+        self.assertEqual(self.model.downloads.summary()["count"], 3)
+
     def test_retry_deferred_queues_original_pin_restoration_without_touching_other_files(self):
         self.prepare_deferred()
         self.assertEqual(self.post("retry-deferred")["queued"], 1)

@@ -385,10 +385,36 @@ function renderEvents(events) {
   }
   ListMotion.render(target, entries);
 }
+function estimateText(estimate) {
+  if (!Number.isFinite(estimate?.seconds)) return "—";
+  if (estimate.seconds === 0) return I18n.t("Готово");
+  const minutes = Math.max(1, Math.ceil(estimate.seconds / 60)),
+    days = Math.floor(minutes / 1440),
+    hours = Math.floor((minutes % 1440) / 60),
+    rest = minutes % 60;
+  const duration = days
+    ? I18n.t("{0} д {1} ч", [number(days), hours])
+    : hours
+      ? I18n.t("{0} ч {1} мин", [hours, rest])
+      : I18n.t("{0} мин", [rest]);
+  return "≈ " + duration;
+}
 function renderMetrics(state, fresh = true) {
   const counters = state.display_counters || state.counters;
   $("nav-count").textContent = number(state.pending);
   const d = state.downloads;
+  const downloaded = counters.native_files ?? d.count;
+  const estimate = state.completion_estimate;
+  const estimateHints = {
+    estimated: "Примерно, по последним загрузкам. Недоступные файлы могут задержать завершение.",
+    learning: "Недостаточно данных для оценки времени.",
+    scanning: "Ожидание списка файлов.",
+    paused: "Расчёт времени доступен при работающем прокси и подключённом Диске.",
+    waiting: "Нет недавних завершённых загрузок для оценки времени.",
+    complete: "Все выбранные файлы сохранены на ПК.",
+  };
+  const estimateTitle = I18n.t(estimateHints[estimate?.status] || estimateHints.learning);
+  $("metric-eta").title = $("board-eta").title = estimateTitle;
   $("nav-downloaded").textContent = number(d.count);
   MeterBoard.update(
     {
@@ -401,8 +427,12 @@ function renderMetrics(state, fresh = true) {
         value: state.pending_bytes || 0,
       },
       downloaded: {
-        text: number(d.count),
-        value: d.count,
+        text: number(downloaded),
+        value: downloaded,
+      },
+      eta: {
+        text: estimateText(estimate),
+        value: estimate?.seconds || 0,
       },
       errors: {
         text: number(counters.http500),
@@ -423,6 +453,7 @@ function renderMetrics(state, fresh = true) {
 }
 function resetButtons() {
   for (const [id, kind] of [
+    ["reset-downloads", "native_files"],
     ["reset-errors", "http500"],
     ["reset-network", "network_bytes"],
     ["reset-deferred", "deferred"],
@@ -438,6 +469,7 @@ function resetButtons() {
   }
 }
 for (const [id, counter] of [
+  ["reset-downloads", "native_files"],
   ["reset-errors", "http500"],
   ["reset-network", "network_bytes"],
   ["reset-deferred", "deferred"],
@@ -453,9 +485,11 @@ for (const [id, counter] of [
       } else {
         const result = await action("/api/statistics/reset", { counter });
         Toasts.show(
-          counter === "http500"
-            ? "Счётчик HTTP 500 сброшен."
-            : "Счётчик трафика сброшен.",
+          {
+            http500: "Счётчик HTTP 500 сброшен.",
+            network_bytes: "Счётчик трафика сброшен.",
+            native_files: "Счётчик новых загрузок сброшен.",
+          }[counter],
           {
             type: "success",
             key: "statistics-reset",
@@ -860,4 +894,4 @@ I18n.onChange(() => {
   if ($("details").open && detailRow) showDetails(detailRow, false);
 });
 setFilter(filter);
-LivePanel.subscribe(refresh, ["state", "files", "events"]);
+LivePanel.subscribe(refresh, ["state", "files", "events", "metrics"]);

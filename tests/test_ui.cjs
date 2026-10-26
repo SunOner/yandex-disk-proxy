@@ -10,6 +10,7 @@ const requests = [];
 const rendered = [];
 const problems = new Map();
 const thumbnailListeners = [];
+let latestMeters;
 function element(id) {
   assert.ok(html.includes(`id="${id}"`), `Removed element still used: ${id}`);
   if (!elements.has(id))
@@ -88,7 +89,7 @@ const context = vm.createContext({
       problems.set(key, { message, ...options });
     },
   },
-  MeterBoard: { update() {}, setConnected() {} },
+  MeterBoard: { update(value) { latestMeters = value; }, setConnected() {} },
 });
 const state = (phase) => ({
   session: { phase },
@@ -116,6 +117,11 @@ async function main() {
     context,
   );
   vm.runInContext(code, context);
+  assert.equal(vm.runInContext("estimateText({seconds: null})", context), "—");
+  assert.equal(vm.runInContext("estimateText({seconds: 0})", context), "Готово");
+  assert.equal(vm.runInContext("estimateText({seconds: 59})", context), "≈ 1 мин");
+  assert.equal(vm.runInContext("estimateText({seconds: 3660})", context), "≈ 1 ч 1 мин");
+  assert.equal(vm.runInContext("estimateText({seconds: 90000})", context), "≈ 1 д 1 ч");
   assert.equal(element("toggle-thumbnails").ariaPressed, "true");
   const requestCount = requests.length;
   element("toggle-thumbnails").listeners.click();
@@ -518,6 +524,32 @@ async function main() {
   await tick();
   respond(requests.shift(), state("active"));
   await undo;
+  show(state("active"));
+  const resetDownloads = element("reset-downloads").listeners.click();
+  assert.equal(JSON.parse(requests[0].options.body).counter, "native_files");
+  assert.equal(element("reset-downloads").disabled, true);
+  await element("reset-downloads").listeners.click();
+  assert.equal(requests.length, 1, "Download reset cannot submit twice");
+  respond(requests.shift(), {ok: true, revision: 8, context: "root"});
+  await tick();
+  respond(requests.shift(), {
+    ...state("active"),
+    display_counters: {native_files: 0},
+    completion_estimate: {status: "estimated", seconds: 3600},
+  });
+  await resetDownloads;
+  assert.equal(latestMeters.downloaded.value, 0);
+  assert.equal(latestMeters.eta.text, "≈ 1 ч 0 мин");
+  assert.equal(element("nav-downloaded").textContent, "1", "Historical file list remains accessible");
+  assert.ok(element("metric-eta").title.includes("Недоступные файлы"));
+  const undoDownloads = resetToast.action.onClick();
+  assert.equal(JSON.parse(requests[0].options.body).revision, 8);
+  respond(requests.shift(), {ok: true});
+  await tick();
+  respond(requests.shift(), state("active"));
+  await undoDownloads;
+  assert.equal(latestMeters.downloaded.value, 1);
+  assert.equal(latestMeters.eta.text, "—");
   show(state("stopped"));
   assert.equal(element("reset-deferred").disabled, true);
   assert.equal(element("reset-network").disabled, false);

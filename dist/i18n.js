@@ -1,6 +1,23 @@
 "use strict";
 const I18n = (() => {
   const english = {
+    "Сбросить счётчик новых загрузок": "Reset new downloads counter",
+    "Счётчик новых загрузок сброшен.": "New downloads counter reset.",
+    "ПРИМЕРНО ОСТАЛОСЬ": "ESTIMATED TIME LEFT",
+    "Примерно осталось": "Estimated time left",
+    "Готово": "Done",
+    "{0} д {1} ч": "{0}d {1}h",
+    "{0} ч {1} мин": "{0}h {1}m",
+    "{0} мин": "{0}m",
+    "Примерно, по последним загрузкам. Недоступные файлы могут задержать завершение.":
+      "Approximate, based on recent downloads. Unavailable files may delay completion.",
+    "Недостаточно данных для оценки времени.": "Not enough data to estimate the time remaining.",
+    "Ожидание списка файлов.": "Waiting for the file list.",
+    "Расчёт времени доступен при работающем прокси и подключённом Диске.":
+      "Time estimates require a running proxy and a connected Disk client.",
+    "Нет недавних завершённых загрузок для оценки времени.":
+      "No recent completed downloads to estimate the time remaining.",
+    "Все выбранные файлы сохранены на ПК.": "All selected files are saved on this PC.",
     "Хранилище сертификата": "Certificate store",
     "Компьютер — автоматический режим": "Computer — automatic mode",
     "Текущий пользователь — совместимость": "Current user — compatibility",

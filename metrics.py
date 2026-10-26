@@ -36,7 +36,7 @@ COUNTERS = (
     "timeout",
     "tls",
 )
-RESETTABLE = ("http500", "network_bytes")
+RESETTABLE = ("http500", "network_bytes", "native_files")
 SOURCES = ("native_files", "native_bytes")
 # Keep historical columns and checkpoints so existing databases and rollback builds stay readable.
 LEGACY_SOURCES = ("direct_files", "direct_bytes")

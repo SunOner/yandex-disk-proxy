@@ -147,6 +147,22 @@
           ><strong id="metric-remaining">—</strong>
         </article>
         <article class="metric-downloads">
+          <button
+            id="reset-downloads"
+            disabled
+            class="metric-action"
+            type="button"
+            aria-label="Reset new downloads counter"
+            title="Reset new downloads counter"
+            data-i18n-aria-label="Сбросить счётчик новых загрузок"
+            data-i18n-title="Сбросить счётчик новых загрузок"
+          >
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none"
+              stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+              stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 10a8 8 0 1 0 2-5M3 3v5h5" />
+            </svg>
+          </button>
           <span data-i18n="НОВЫЕ ЗАГРУЗКИ">NEW DOWNLOADS</span
           ><strong id="metric-downloaded">—</strong>
         </article>
@@ -233,6 +249,10 @@
           </button>
           <span data-i18n="ПЕРЕДАНО ПО СЕТИ">NETWORK TRAFFIC</span
           ><strong id="metric-network" data-i18n-once="0 Б">0 B</strong>
+        </article>
+        <article class="metric-eta">
+          <span data-i18n="ПРИМЕРНО ОСТАЛОСЬ">ESTIMATED TIME LEFT</span
+          ><strong id="metric-eta">—</strong>
         </article>
       </section>
       <div class="workspace">
@@ -581,6 +601,10 @@
         <article class="board-card board-downloads">
           <h2 data-i18n="Новые загрузки">New downloads</h2>
           <strong id="board-downloaded">—</strong>
+        </article>
+        <article class="board-card board-eta">
+          <h2 data-i18n="Примерно осталось">Estimated time left</h2>
+          <strong id="board-eta">—</strong>
         </article>
       </div>
       <div class="board-secondary">
