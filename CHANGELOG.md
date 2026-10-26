@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.3
+
+- Added automatic Disk reconnection and retries for deferred files.
+- Added counter resets with Undo.
+- Added a file preview toggle that remembers its state.
+- Fixed toast animations and repeated TLS notifications.
+- Fixed missing English translations and tightened sidebar spacing.
+- Removed Direct downloads.
+
 ## 0.8.1
 
 - Save immediately shows progress and prevents duplicate submissions while checking the selected paths.
