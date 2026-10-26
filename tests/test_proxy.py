@@ -52,6 +52,7 @@ def model():
     m.threshold = 3
     m.cooldown = 300
     m.counters = collections.Counter()
+    m.tls = {}
     m.seen_http = collections.OrderedDict()
     m.log = Mock()
     m.command = Mock()

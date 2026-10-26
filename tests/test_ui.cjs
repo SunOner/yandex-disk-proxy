@@ -8,6 +8,8 @@ const code = fs.readFileSync(path.join(root, "dist/app.js"), "utf8");
 const elements = new Map();
 const requests = [];
 const rendered = [];
+const problems = new Map();
+const thumbnailListeners = [];
 function element(id) {
   assert.ok(html.includes(`id="${id}"`), `Removed element still used: ${id}`);
   if (!elements.has(id))
@@ -39,7 +41,19 @@ function element(id) {
 const context = vm.createContext({
   I18n: require("./i18n_stub.cjs")(),
   LivePanel: { subscribe() {} },
-  Thumbnails: { decorate() {}, sync() {}, configure() {} },
+  Thumbnails: {
+    enabled: true,
+    decorate() {},
+    sync() {},
+    configure() {},
+    setEnabled(value) {
+      this.enabled = value;
+      thumbnailListeners.forEach((listener) => listener(value));
+    },
+    onChange(listener) {
+      thumbnailListeners.push(listener);
+    },
+  },
   console,
   URLSearchParams,
   Intl,
@@ -68,7 +82,12 @@ const context = vm.createContext({
     );
   },
   rendered,
-  Toasts: { show() {}, problem() {} },
+  Toasts: {
+    show() {},
+    problem(key, message, options = {}) {
+      problems.set(key, { message, ...options });
+    },
+  },
   MeterBoard: { update() {}, setConnected() {} },
 });
 const state = (phase) => ({
@@ -97,6 +116,18 @@ async function main() {
     context,
   );
   vm.runInContext(code, context);
+  assert.equal(element("toggle-thumbnails").ariaPressed, "true");
+  const requestCount = requests.length;
+  element("toggle-thumbnails").listeners.click();
+  assert.equal(element("toggle-thumbnails").ariaPressed, "false");
+  assert.equal(element("toggle-thumbnails").title, "Показывать превью файлов");
+  element("toggle-thumbnails").listeners.click();
+  assert.equal(element("toggle-thumbnails").ariaPressed, "true");
+  assert.equal(
+    requests.length,
+    requestCount,
+    "Preview toggle does not change the proxy session",
+  );
   vm.runInContext("renderRows = data => rendered.push(data.rows);", context);
   vm.runInContext("setFilter('errors')", context);
   respond(requests.shift(), state("idle"));
@@ -140,42 +171,126 @@ async function main() {
     context,
   );
   assert.equal(
-    element("tls-warning").hidden,
-    true,
-    "A verified client TLS connection must not be shown as disconnected",
+    problems.get("session").message,
+    "Сертификат больше не находится в доверенных Windows.",
+    "An old successful handshake cannot hide missing Windows trust",
   );
   vm.runInContext(
     "sessionView({session:{phase:'active',ca_trusted:false},tls:{client:{ok:false}},mode:'defer'})",
     context,
   );
-  assert.equal(element("tls-warning").hidden, false);
-  assert.equal(element("repair-ca").hidden, false);
+  assert.equal(problems.get("session").action.label, "Восстановить доверие");
+  const repairing = problems.get("session").action.onClick();
+  assert.equal(requests[0].url, "/api/repair-ca");
+  respond(requests.shift(), { ok: true });
+  await tick();
+  respond(requests.shift(), state("active"));
+  await tick();
+  respond(requests.shift(), { offset: 0, total: 0, rows: [] });
+  await repairing;
+  assert.equal(problems.get("session").message, "");
+  vm.runInContext(
+    "sessionView({session:{phase:'active',ca_trusted:true,client_attached:false,client_connection:'limited'},tls:{client:{ok:true}},mode:'defer'})",
+    context,
+  );
+  assert.equal(problems.get("session").action.label, "Перезапустить Диск");
+  assert.equal(
+    element("session-title").textContent,
+    "Диск не подключён к прокси",
+  );
+  const restarting = problems.get("session").action.onClick();
+  assert.equal(requests[0].url, "/api/restart-client");
+  requests.shift().resolve({
+    ok: false,
+    json: async () => ({ error: "Restart failed" }),
+  });
+  await assert.rejects(restarting, /Restart failed/);
+  vm.runInContext(
+    "sessionView({session:{phase:'active',ca_trusted:true,client_attached:true,client_connected_at:200},tls:{client:{ok:false,at:100}},mode:'defer'})",
+    context,
+  );
+  assert.equal(
+    problems.get("session").message,
+    "",
+    "A reconnected client ignores failures from an older connection",
+  );
   vm.runInContext(
     "sessionView({session:{phase:'active',certificate_scope:'client',certificate_ready:true,ca_trusted:false},mode:'defer'})",
     context,
   );
   assert.equal(
-    element("tls-warning").hidden,
-    true,
+    problems.get("session").message,
+    "",
     "Client-scoped trust must not require a Windows store entry",
   );
-  assert.equal(element("repair-ca").hidden, true);
+  assert.equal(problems.get("session").action, undefined);
   vm.runInContext(
     "sessionView({session:{phase:'active',certificate_scope:'client',certificate_ready:true},tls:{client:{ok:false}},mode:'defer'})",
     context,
   );
-  assert.equal(element("restart-client").hidden, false);
-  assert.equal(element("repair-ca").hidden, true);
+  assert.equal(problems.get("session").action.label, "Перезапустить Диск");
+  assert.equal(
+    problems.get("session").message,
+    "Диск отклонил TLS-соединение. Причина — в журнале.",
+  );
   vm.runInContext(
     "sessionView({session:{phase:'active',certificate_scope:'client',certificate_ready:false},mode:'defer'})",
     context,
   );
-  assert.equal(element("tls-warning").hidden, false);
   assert.equal(
-    element("tls-message").textContent,
+    problems.get("session").message,
     "Файл сертификата Диска недоступен или изменён.",
   );
-  for (const id of ["start", "stop", "settings", "rescan", "session-led"])
+  assert.equal(problems.get("session").action, undefined);
+  vm.runInContext(
+    "sessionView({session:{phase:'active',ca_trusted:true},tls:{upstream:{ok:false}},mode:'defer'})",
+    context,
+  );
+  assert.equal(
+    problems.get("session").message,
+    "Ошибка TLS между прокси и Яндексом. Причина — в журнале.",
+  );
+  assert.equal(problems.get("session").action, undefined);
+  assert.equal(
+    problems.get("session").delay,
+    10000,
+    "Transient upstream TLS waits for recovery",
+  );
+  assert.equal(
+    problems.get("session").cooldown,
+    300000,
+    "Flapping upstream TLS cannot flood notifications",
+  );
+  vm.runInContext(
+    "sessionView({session:{phase:'active',ca_trusted:true},tls:{upstream:{ok:false,error:'Certificate verify failed'}},mode:'defer'})",
+    context,
+  );
+  assert.equal(
+    problems.get("session").delay,
+    0,
+    "Certificate failures are immediate",
+  );
+  assert.equal(
+    problems.get("session").cooldown,
+    0,
+    "Certificate failures bypass throttling",
+  );
+  vm.runInContext(
+    "sessionView({session:{phase:'stopped',error_detail:'Cleanup failed'},mode:'defer'})",
+    context,
+  );
+  assert.equal(problems.get("session").message, "Cleanup failed");
+  for (const id of [
+    "start",
+    "stop",
+    "settings",
+    "rescan",
+    "session-led",
+    "tls-warning",
+    "tls-message",
+    "repair-ca",
+    "restart-client",
+  ])
     assert.ok(!html.includes(`id="${id}"`));
   const toggle = element("proxy-toggle");
   function show(value) {
@@ -375,6 +490,37 @@ async function main() {
     "A failed save can be corrected and retried",
   );
   assert.equal(element("setup-form").ariaBusy, "false");
+  element("setup-cancel").listeners.click();
+  show({ ...state("active"), counts: { deferred: 2 } });
+  let resetToast;
+  context.Toasts.show = (text, options) => {
+    if (options?.action) resetToast = options;
+  };
+  const reset = element("reset-errors").listeners.click();
+  assert.equal(requests[0].url, "/api/statistics/reset");
+  assert.equal(JSON.parse(requests[0].options.body).counter, "http500");
+  assert.equal(element("reset-errors").disabled, true);
+  await element("reset-errors").listeners.click();
+  assert.equal(requests.length, 1);
+  respond(requests.shift(), { ok: true, revision: 7, context: "root" });
+  await tick();
+  respond(requests.shift(), {
+    ...state("active"),
+    counts: { deferred: 2 },
+    display_counters: { http500: 0, network_bytes: 0 },
+  });
+  await reset;
+  assert.equal(element("reset-errors").disabled, false);
+  const undo = resetToast.action.onClick();
+  assert.equal(requests[0].url, "/api/statistics/undo");
+  assert.equal(JSON.parse(requests[0].options.body).revision, 7);
+  respond(requests.shift(), { ok: true });
+  await tick();
+  respond(requests.shift(), state("active"));
+  await undo;
+  show(state("stopped"));
+  assert.equal(element("reset-deferred").disabled, true);
+  assert.equal(element("reset-network").disabled, false);
   console.log(
     "UI: switch, consent, stale results, setup busy feedback, picker/save guards, async scan status and validation retry passed.",
   );

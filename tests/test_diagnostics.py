@@ -17,11 +17,93 @@ from diagnostics import JsonLog, Traffic, redact_text
 
 
 class Diagnostics(unittest.TestCase):
+    def test_https_response_recovers_closed_upstream_handshake_even_with_http_500(self):
+        with tempfile.TemporaryDirectory() as directory:
+            panel = model()
+            panel.traffic = Traffic(Path(directory) / "requests.jsonl")
+            panel.preview_session = Mock()
+            panel.tls = {
+                "upstream": {
+                    "ok": False,
+                    "host": "downloader.disk.yandex.ru",
+                    "error": "connection closed",
+                },
+                "client": {"ok": False, "error": "certificate rejected"},
+            }
+            panel.counters["tls_errors"] = 7
+            panel.event(
+                {
+                    "event": "traffic",
+                    "record": {
+                        "id": "https-response",
+                        "type": "http",
+                        "phase": "response",
+                        "status": 500,
+                        "client": "disk",
+                        "route": "proxy",
+                        "source": "upstream",
+                        "url": "https://downloader.disk.yandex.ru/example",
+                    },
+                }
+            )
+            self.assertTrue(panel.tls["upstream"]["ok"])
+            self.assertEqual(panel.tls["upstream"]["via"], "https_response")
+            self.assertFalse(panel.tls["client"]["ok"])
+            self.assertEqual(panel.counters["tls_errors"], 7)
+            self.assertEqual(panel.traffic.detail("https-response")["status"], 500)
+
+    def test_unrelated_or_local_responses_do_not_hide_upstream_tls_failures(self):
+        panel = model()
+        original = {"ok": False, "host": "downloader.disk.yandex.ru", "error": "connection closed"}
+        response = {
+            "type": "http",
+            "phase": "response",
+            "status": 200,
+            "client": "disk",
+            "route": "proxy",
+            "source": "upstream",
+            "url": "https://downloader.disk.yandex.ru/example",
+        }
+        for change in (
+            {"source": "local"},
+            {"client": "recovery"},
+            {"route": "direct"},
+            {"phase": "progress"},
+            {"status": None},
+            {"status": True},
+            {"url": None},
+            {"url": "http://downloader.disk.yandex.ru/example"},
+            {"url": "https://cloud-api.yandex.net/example"},
+            {"url": "https://[bad"},
+        ):
+            with self.subTest(change=change):
+                panel.tls["upstream"] = original.copy()
+                panel.tls_response({**response, **change})
+                self.assertEqual(panel.tls["upstream"], original)
+
+    def test_existing_https_connections_do_not_hide_certificate_validation_errors(self):
+        panel = model()
+        for reason in ("Certificate verify failed", "unknown ca", "CERT_VERIFY_FAILED"):
+            with self.subTest(reason=reason):
+                panel.tls["upstream"] = {"ok": False, "host": "example.test", "error": reason}
+                panel.tls_response(
+                    {
+                        "type": "http",
+                        "phase": "response",
+                        "status": 200,
+                        "client": "disk",
+                        "route": "proxy",
+                        "source": "upstream",
+                        "url": "https://example.test/",
+                    }
+                )
+                self.assertFalse(panel.tls["upstream"]["ok"])
+
     def test_panel_counts_unmatched_streams_partial_errors_and_retries_once(self):
         with tempfile.TemporaryDirectory() as directory:
             panel = model()
             panel.traffic = Traffic(Path(directory) / "traffic.jsonl")
-            panel.recovery = Mock()
+            panel.preview_session = Mock()
             for index in range(2):
                 tracker = addon.Tracker()
                 item = flow("https://downloader.disk.yandex.ru/unmatched", status=500)
@@ -55,7 +137,7 @@ class Diagnostics(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             panel = model()
             panel.traffic = Traffic(Path(directory) / "traffic.jsonl")
-            panel.recovery = Mock()
+            panel.preview_session = Mock()
             tracker = addon.Tracker()
             item = flow("https://downloader.disk.yandex.ru/mapped")
             tracker.remember(item.request.url, "test/a.bin")

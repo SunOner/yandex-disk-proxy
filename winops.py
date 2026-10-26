@@ -111,7 +111,7 @@ def with_file(rel, action):
     p = safe_path(rel)
     h = k.CreateFileW(str(p), 0x80, 7, None, 3, 0x200000, None)
     if h == W.HANDLE(-1).value:
-        raise OSError(C.get_last_error(), "Could not open cloud-file metadata")
+        raise C.WinError(C.get_last_error())
     try:
         return action(h, p)
     finally:
@@ -179,6 +179,24 @@ def process_image(pid):
         return Path(buf.value) if k.QueryFullProcessImageNameW(h, 0, buf, C.byref(n)) else None
     finally:
         k.CloseHandle(h)
+
+
+def restore_pin(rel, item):
+    """Forget a deleted file; retain failures for existing or inaccessible files."""
+    try:
+        set_pin(rel, item["original_pin"], item["before"])
+    except OSError:
+        if ROOT is None or not ROOT.is_dir():
+            raise
+        try:
+            safe_path(rel).stat()
+        except FileNotFoundError:
+            if ROOT.is_dir():
+                return False
+        except (OSError, ValueError):
+            pass
+        raise
+    return True
 
 
 def created_ticks(pid):
@@ -532,6 +550,7 @@ def _recover_session(directory):
     state = json.loads(path.read_text(encoding="utf-8"))
     ledger = json.loads(pins.read_text(encoding="utf-8")) if pins.exists() else {}
     problems = []
+    missing_skipped = 0
     for name, exe in (
         ("client", CLIENT),
         ("proxy", BASE_PY if state.get("proxy_image") == str(BASE_PY) else PROXY_PY),
@@ -550,7 +569,8 @@ def _recover_session(directory):
         removed = False
     for rel, item in list(ledger.items()):
         try:
-            set_pin(rel, item["original_pin"], item["before"])
+            if not restore_pin(rel, item):
+                missing_skipped += 1
             del ledger[rel]
         except Exception:
             pass
@@ -567,6 +587,7 @@ def _recover_session(directory):
         restore_failures=list(ledger),
         cleanup_errors=problems,
         deferred_count=len(ledger),
+        missing_files_skipped=missing_skipped,
         ended=__import__("time").time(),
     )
     atomic(path, state)

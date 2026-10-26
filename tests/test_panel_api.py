@@ -99,7 +99,7 @@ class PanelAccess(unittest.TestCase):
                     http_thread.join()
                     httpd.server_close()
                     model.thumbnails.close()
-                    model.recovery.close()
+                    model.preview_session.close()
                     model.metrics.close()
 
     def test_original_headers_need_nonce_and_origin_and_are_not_exposed_by_get(self):
@@ -198,10 +198,6 @@ class PanelAccess(unittest.TestCase):
                         "/toasts.js",
                         "/meters.js",
                         "/requests.css",
-                        "/recovery",
-                        "/recovery.js",
-                        "/recovery.css",
-                        "/api/recovery",
                     ):
                         self.assertEqual(urllib.request.urlopen(url + route, timeout=3).status, 200)
                     for route in ("/api/certificate/settings", "/api/certificate/action"):
@@ -210,13 +206,31 @@ class PanelAccess(unittest.TestCase):
                                 urllib.request.Request(url + route, data=b"{}"), timeout=3
                             )
                         self.assertEqual(error.exception.code, 403)
-                    for route in ("enqueue", "batch", "browser", "control"):
+                    for route in (
+                        "/recovery",
+                        "/recovery.js",
+                        "/recovery.css",
+                        "/api/recovery",
+                        "/browser-download/old-ticket",
+                    ):
+                        with self.assertRaises(urllib.error.HTTPError) as error:
+                            urllib.request.urlopen(url + route, timeout=3)
+                        self.assertEqual(error.exception.code, 404)
+                    for route in ("enqueue", "batch", "browser", "control", "folder"):
                         with self.assertRaises(urllib.error.HTTPError) as error:
                             urllib.request.urlopen(
-                                urllib.request.Request(url + "/api/recovery/" + route, data=b"{}"),
+                                urllib.request.Request(
+                                    url + "/api/recovery/" + route,
+                                    data=b"{}",
+                                    headers={
+                                        "Origin": url,
+                                        "X-Panel-Nonce": server.NONCE,
+                                        "Content-Type": "application/json",
+                                    },
+                                ),
                                 timeout=3,
                             )
-                        self.assertEqual(error.exception.code, 403)
+                        self.assertEqual(error.exception.code, 404)
                     request = urllib.request.Request(
                         url + "/api/rescan",
                         data=b"{}",

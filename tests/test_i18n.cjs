@@ -62,6 +62,26 @@ assert.equal(app.document.documentElement.attributes['data-i18n-ready'], 'true')
 assert.equal(app.i18n.locale, 'en-GB');
 assert.equal(app.i18n.decimal, '.');
 assert.equal(app.i18n.t('Documents/Ошибка.txt'), 'Documents/Ошибка.txt', 'Paths are preserved');
+assert.equal(app.i18n.t('Ошибка TLS: прокси → Яндекс'), 'TLS error: proxy → Yandex');
+const clientTls = app.i18n.t('Ошибка TLS: Диск → прокси');
+assert.equal(clientTls, 'TLS error: Disk → proxy', 'Nested labels follow the selected language');
+assert.equal(app.i18n.t('Режим: наблюдение'), 'Mode: observation');
+assert.equal(app.i18n.t('Действие не выполнено: Некорректная ссылка миниатюры'), 'Action failed: Invalid thumbnail URL');
+assert.equal(app.i18n.t('Предыдущий запрос: {0} · переходов: {1}', ['Скачать', 2]), 'Previous request: Скачать · redirects: 2', 'Data parameters are not translated as UI labels');
+for (const message of ['Помощнику сертификата нужны права администратора', 'Некорректная ссылка миниатюры', 'Не найден процесс рабочего стола для запуска Диска', '[скрыто]']) {
+  assert.ok(!/[А-Яа-яЁё]/.test(app.i18n.t(message)), message);
+}
+const dist=path.join(__dirname,'../dist');
+for (const file of fs.readdirSync(dist).filter(file=>/\.(html|js)$/.test(file))) {
+  const contents=fs.readFileSync(path.join(dist,file),'utf8');
+  const literals=file.endsWith('.html')
+    ? [...contents.matchAll(/data-i18n(?:-once|-title|-placeholder|-aria-label)?="([^"]*)"/g)].map(match=>match[1])
+    : file.endsWith('.js')&&file!=='i18n.js'
+      ? [...contents.matchAll(/"(?:\\.|[^"\\])*"/g)].map(match=>{try{return JSON.parse(match[0]);}catch{return '';}})
+      : [];
+  for (const text of literals.filter(text=>/[А-Яа-яЁё]/.test(text)))
+    assert.ok(!/[А-Яа-яЁё]/.test(app.i18n.t(text)),`${file}: missing English translation for ${text}`);
+}
 const dynamic = ' · удалено по лимиту: {0}';
 const formatted = app.i18n.t(dynamic, [123]);
 assert.ok(formatted.includes('123'));
@@ -82,6 +102,7 @@ assert.equal(app.i18n.locale, 'ru-RU');
 assert.equal(app.i18n.decimal, ',');
 assert.equal(app.text.textContent, 'Прокси включён');
 assert.equal(app.i18n.t(formatted), ' · удалено по лимиту: 123', 'Already rendered notifications retranslate');
+assert.equal(app.i18n.t(clientTls), 'Ошибка TLS: Диск → прокси', 'Nested labels also switch back to Russian');
 assert.equal(app.once.textContent, 'Waiting', 'Mutable counters are not reset by static localization');
 assert.equal(changes, 1);
 assert.equal(menu.hidden, true);
@@ -111,4 +132,20 @@ const labels = app.i18n.labels({phase: 'Прокси включён'});
 assert.equal(labels.phase, 'Proxy is on');
 app.i18n.setLanguage('ru');
 assert.equal(labels.phase, 'Прокси включён', 'Dynamic labels follow language changes');
+const previewPrefs=boot(), preferenceChanges=[];
+previewPrefs.i18n.preferences.onChange((name,value)=>preferenceChanges.push([name,value]));
+assert.equal(previewPrefs.i18n.preferences.get('thumbnails',true),true,'Previews are enabled by default');
+previewPrefs.i18n.preferences.set('thumbnails',false);
+assert.equal(previewPrefs.saved.thumbnails,false);
+assert.equal(boot(JSON.stringify(previewPrefs.saved)).i18n.preferences.get('thumbnails',true),false,'Disabled previews survive reload');
+previewPrefs.i18n.preferences.set('thumbnails',false);
+assert.equal(preferenceChanges.length,1,'Unchanged preferences do not notify twice');
+previewPrefs.external(JSON.stringify({language:'en',thumbnails:true}));
+assert.equal(preferenceChanges.at(-1)[0],'thumbnails');
+assert.equal(preferenceChanges.at(-1)[1],true,'Other tabs update previews without changing language');
+previewPrefs.external(null,null);
+assert.equal(previewPrefs.i18n.preferences.get('thumbnails',true),true,'Clearing browser data restores enabled previews');
+assert.equal(boot('{"thumbnails":"false"}').i18n.preferences.get('thumbnails',true),true,'Invalid preference types are ignored');
+blocked.i18n.preferences.set('thumbnails',false);
+assert.equal(blocked.i18n.preferences.get('thumbnails',true),false,'Blocked storage still permits changing previews in memory');
 console.log('Localization: English default, Russian persistence, live translation, flags, keyboard, cross-tab storage, invalid preferences and secret allowlist passed.');

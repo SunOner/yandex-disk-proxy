@@ -16,10 +16,7 @@ const MonitoringCharts = (() => {
       title: "Подтверждённые загрузки",
       unit: "Файлов за интервал",
       kind: "downloads",
-      series: [
-        ["native_files", "Приложение", "#83dcb2"],
-        ["direct_files", "Прямые", "#b3a1ff"],
-      ],
+      series: [["native_files", "Приложение", "#83dcb2"]],
     },
     {
       id: "requests",
@@ -67,11 +64,7 @@ const MonitoringCharts = (() => {
         : null;
     if (kind === "gauge") return point[key] ?? null;
     if (kind === "downloads")
-      return point.seconds > 0 ||
-        point.native_files > 0 ||
-        point.direct_files > 0
-        ? point[key]
-        : null;
+      return point.seconds > 0 || point.native_files > 0 ? point[key] : null;
     return point.seconds > 0 ? point[key] : null;
   }
   function path(values, left, top, width, height, max) {
@@ -305,8 +298,6 @@ const MonitoringCharts = (() => {
     for (const [id, value] of Object.entries({
       "native-files": number(totals.native_files),
       "native-bytes": bytes(totals.native_bytes),
-      "direct-files": number(totals.direct_files),
-      "direct-bytes": bytes(totals.direct_bytes),
       received: bytes(totals.received_bytes),
       sent: I18n.t("Отправлено") + ": " + bytes(totals.sent_bytes),
       errors500: number(totals.http500_all),

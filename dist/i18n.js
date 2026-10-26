@@ -22,6 +22,8 @@ const I18n = (() => {
       "The certificate helper returned no result",
     "Не удалось изменить доверие к сертификату":
       "Could not change certificate trust",
+    "Помощнику сертификата нужны права администратора":
+      "The certificate helper requires administrator permission",
     Настройки: "Settings",
     "Настройки ↗": "Settings ↗",
     "Настройки — Yandex Disk Proxy": "Settings — Yandex Disk Proxy",
@@ -79,12 +81,41 @@ const I18n = (() => {
     "Нет связи с панелью": "Panel disconnected",
     "Ошибка действия": "Action failed",
     "Прокси включён": "Proxy is on",
+    "Сбросить счётчик HTTP 500": "Reset HTTP 500 counter",
+    "Сбросить счётчик трафика": "Reset traffic counter",
+    "Повторить загрузку отложенных файлов": "Retry deferred files",
+    "Счётчик HTTP 500 сброшен.": "HTTP 500 counter reset.",
+    "Счётчик трафика сброшен.": "Traffic counter reset.",
+    Отменить: "Undo",
+    "Сброс отменён.": "Reset undone.",
+    "Возвращено в очередь: {0}": "Returned to the queue: {0}",
+    "Этот сброс уже нельзя отменить": "This reset can no longer be undone",
+    "Этот счётчик нельзя сбросить": "This counter cannot be reset",
+    "Статистика недоступна": "Statistics unavailable",
+    "Укажите сброс для отмены": "Specify the reset to undo",
+    "Диск не подключён к прокси": "Disk is disconnected from the proxy",
+    "Подключение Диска к прокси восстанавливается.":
+      "Reconnecting Disk to the proxy.",
+    "Не удалось переподключить Диск. Нажмите «Перезапустить Диск».":
+      "Could not reconnect Disk. Click Restart Disk.",
+    "Не удалось автоматически запустить прокси":
+      "Could not start the proxy automatically",
+    "Не удалось повторить загрузку": "Could not retry the download",
+    "Повторная попытка загрузки": "Retrying download",
+    "Пропущен отсутствующий файл": "Skipped a missing file",
+    "Переподключение Диска приостановлено после трёх попыток":
+      "Disk reconnection paused after three attempts",
     "Запуск прокси": "Starting proxy",
     "Восстанавливается клиент": "Restoring client",
     "Ошибка восстановления": "Recovery failed",
     "Прокси выключен": "Proxy is off",
     Прокси: "Proxy",
     Миниатюра: "Thumbnail",
+    "Прямое соединение": "Direct connection",
+    Превью: "Previews",
+    "Превью файлов": "File previews",
+    "Показывать превью файлов": "Show file previews",
+    "Скрыть превью файлов": "Hide file previews",
     "Миниатюра недоступна": "Thumbnail unavailable",
     "Выключить прокси и восстановить Диск": "Stop proxy and restore Disk",
     "Восстановить Диск": "Restore Disk",
@@ -193,10 +224,7 @@ const I18n = (() => {
     "Добавлено в очередь: {0}.": "Files queued: {0}.",
     "Нет новых файлов для добавления.": "No new files to queue.",
     "Папка загрузок открыта.": "Download folder opened.",
-    "Прямые загрузки приостановлены.": "Direct downloads paused.",
-    "Прямые загрузки продолжены.": "Direct downloads resumed.",
     "Загрузка файла остановлена.": "File download stopped.",
-    "Прямые загрузки остановлены.": "Direct downloads stopped.",
     "Разрешите открытие новой вкладки и повторите загрузку.":
       "Allow pop-ups and try the download again.",
     Остановить: "Stop",
@@ -250,7 +278,6 @@ const I18n = (() => {
     "Длительность: {0} мс": "Duration: {0} ms",
     "Запрос выполняется": "Request in progress",
     "Маршрут: {0}": "Route: {0}",
-    "прямая загрузка": "direct download",
     "Диск через прокси": "Disk through proxy",
     "Заголовки: {0} мс": "Headers: {0} ms",
     "Первый байт: {0} мс": "First byte: {0} ms",
@@ -346,8 +373,6 @@ const I18n = (() => {
     "Слишком много перенаправлений": "Too many redirects",
     "Ожидание запроса Диска для подтверждения аккаунта":
       "Waiting for a Disk request to verify the account",
-    "Папка прямой загрузки должна быть вне Яндекс Диска":
-      "The direct download folder must be outside Yandex Disk",
     "API вернул другой файл": "The API returned a different file",
     "API не предоставил контрольную сумму файла":
       "The API did not provide a file checksum",
@@ -392,6 +417,10 @@ const I18n = (() => {
     "Сервер сжал диапазон файла": "The server compressed the file range",
     "Неверная длина тела ответа": "Invalid response body length",
     "Неизвестное действие": "Unknown action",
+    "Некорректная ссылка миниатюры": "Invalid thumbnail URL",
+    "Не найден процесс рабочего стола для запуска Диска":
+      "Could not find the desktop process to start Disk",
+    "[скрыто]": "[redacted]",
     "Загрузка: HTTP {0}": "Download: HTTP {0}",
     "Сервер вернул другой диапазон файла":
       "The server returned a different file range",
@@ -450,7 +479,6 @@ const I18n = (() => {
     "Файл скачан": "File downloaded",
     "Сначала остановите прокси и завершите восстановление":
       "Stop the proxy and finish recovery first",
-    "Сначала остановите прямые загрузки": "Stop direct downloads first",
     "Сначала остановите прокси": "Stop the proxy first",
     "Диск → прокси": "Disk → proxy",
     "прокси → Яндекс": "proxy → Yandex",
@@ -505,7 +533,6 @@ const I18n = (() => {
     Отложенные: "Deferred",
     "Все отмеченные": "All selected",
     "Запросы и журнал ↗": "Requests & logs ↗",
-    "Прямые загрузки ↗": "Direct downloads ↗",
     "При ошибке 500": "On HTTP 500",
     "Откладывать файлы": "Defer files",
     "Ограничивать повторы": "Limit retries",
@@ -575,9 +602,6 @@ const I18n = (() => {
     "Осталось сохранить": "Left to save",
     "Ответы 500": "HTTP 500 responses",
     Отложено: "Deferred",
-    "Прямые загрузки — Yandex Disk Proxy":
-      "Direct downloads — Yandex Disk Proxy",
-    "Прямые загрузки": "Direct downloads",
     "Запросы ↗": "Requests ↗",
     "Подключение…": "Connecting…",
     "Только отмеченные для хранения файлы. Результат сохраняется отдельно; размер и контрольная сумма проверяются. Загрузки браузера проверяйте самостоятельно.":
@@ -599,7 +623,6 @@ const I18n = (() => {
     Действия: "Actions",
     "Очередь пуста": "Queue is empty",
     "Загрузка по URL": "Download from URL",
-    "Прямая HTTPS-ссылка загрузки Яндекса": "Direct Yandex HTTPS download URL",
     "Ссылка используется только для выбранного файла. Проверка по контрольной сумме из API. Адрес хранится в памяти до закрытия приложения.":
       "The URL is used only for the selected file and checked against the API checksum. It stays in memory until the application closes.",
     "Запросы и журнал — Yandex Disk Proxy":
@@ -687,7 +710,6 @@ const I18n = (() => {
       "Подтверждённые загрузки": "Confirmed downloads",
       "Файлов за интервал": "Files per interval",
       Приложение: "Native client",
-      Прямые: "Direct queue",
       "HTTP-запросы": "HTTP requests",
       "За интервал": "Per interval",
       "Ошибки HTTP": "HTTP errors",
@@ -715,11 +737,11 @@ const I18n = (() => {
   const storageKey = "ydp.preferences.v1";
   const allowed = {
     language: ["en", "ru"],
+    thumbnails: [true, false],
     fileFilter: ["pending", "errors", "deferred", "downloaded", "local", "all"],
     logView: ["requests", "events", "summary"],
     logLevel: ["all", "errors", "unusual"],
     logKind: ["", "http", "tls", "connection", "websocket", "file"],
-    recoveryView: ["queue", "files"],
     monitorPeriod: ["1h", "6h", "24h", "7d", "30d", "90d", "1y", "3y"],
   };
   function clean(value) {
@@ -739,9 +761,21 @@ const I18n = (() => {
   let preferences = read(),
     language = preferences.language || "en";
   const listeners = new Set(),
+    preferenceListeners = new Set(),
     pickers = [],
     rendered = new Map();
   const reverse = new Map(Object.entries(english).map(([ru, en]) => [en, ru]));
+  // These parameters contain UI labels or error messages, rather than file data.
+  const translatedArguments = new Set([
+    "Ошибка TLS: {0}",
+    "Режим: {0}",
+    "Действие не выполнено: {0}",
+    "Обрыв загрузки: {0}",
+    "Не удалось записать операцию: {0}",
+    "Не удалось записать журнал: {0}",
+    "Не удалось записать запросы: {0}",
+    "Не удалось сохранить сводку: {0}",
+  ]);
   const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const patterns = Object.entries(english)
     .filter(([key]) => /\{\d+\}/.test(key))
@@ -791,7 +825,18 @@ const I18n = (() => {
     if (!key) return source;
     const result = (language === "en" ? english[key] : key).replace(
       /\{(\d+)\}/g,
-      (_, n) => args[n] ?? "",
+      (_, n) => {
+        const value = args[n] ?? "";
+        if (!translatedArguments.has(key)) return value;
+        const parameter = Object.hasOwn(english, value)
+          ? value
+          : reverse.get(value);
+        return parameter
+          ? language === "en"
+            ? english[parameter]
+            : parameter
+          : value;
+      },
     );
     if (result.length < 3000) {
       rendered.delete(result);
@@ -818,12 +863,21 @@ const I18n = (() => {
     document.documentElement.setAttribute("data-i18n-ready", "true");
   }
 
+  function notifyPreferences(previous) {
+    for (const key of Object.keys(allowed))
+      if (previous[key] !== preferences[key])
+        preferenceListeners.forEach((listener) =>
+          listener(key, preferences[key]),
+        );
+  }
   function save(key, value) {
     if (!Object.hasOwn(allowed, key) || !allowed[key].includes(value)) return;
+    const previous = preferences;
     preferences = { ...preferences, ...read(), [key]: value };
     try {
       localStorage.setItem(storageKey, JSON.stringify(preferences));
     } catch {}
+    notifyPreferences(previous);
   }
   function setLanguage(value, persist = true) {
     if (!["en", "ru"].includes(value)) return;
@@ -981,7 +1035,9 @@ const I18n = (() => {
 
   window.addEventListener("storage", (event) => {
     if (event.key !== storageKey && event.key !== null) return;
+    const previous = preferences;
     preferences = read();
+    notifyPreferences(previous);
     setLanguage(preferences.language || "en", false);
   });
   apply();
@@ -1010,6 +1066,9 @@ const I18n = (() => {
     preferences: {
       get: (key, fallback) => preferences[key] ?? fallback,
       set: save,
+      onChange(listener) {
+        preferenceListeners.add(listener);
+      },
     },
   };
 })();

@@ -7,5 +7,5 @@ module.exports = () => ({
     String(key ?? "").replace(/\{(\d+)\}/g, (_, n) => values[n] ?? ""),
   labels: (value) => value,
   onChange() {},
-  preferences: { get: (_, fallback) => fallback, set() {} },
+  preferences: { get: (_, fallback) => fallback, set() {}, onChange() {} },
 });

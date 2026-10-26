@@ -10,6 +10,7 @@ let snapshot = null,
   loadingMore = false,
   sessionPending = null,
   setupPending = null,
+  resetPending = null,
   visibleDownloads = 60,
   downloadedTotal = null;
 let lastRows = null,
@@ -63,6 +64,17 @@ function toast(text, type = "error") {
   }
   Toasts.show(text, { type });
 }
+function thumbnailToggleView() {
+  $("toggle-thumbnails").ariaPressed = String(Thumbnails.enabled);
+  $("toggle-thumbnails").title = I18n.t(
+    Thumbnails.enabled ? "Скрыть превью файлов" : "Показывать превью файлов",
+  );
+}
+$("toggle-thumbnails").addEventListener("click", () =>
+  Thumbnails.setEnabled(!Thumbnails.enabled),
+);
+Thumbnails.onChange(thumbnailToggleView);
+thumbnailToggleView();
 async function action(path, data = {}) {
   if (!snapshot || !connected) throw new Error(I18n.t("Нет связи с панелью"));
   const r = await fetch(path, {
@@ -84,6 +96,7 @@ function sessionView(s) {
         : "stopping"
       : s.session.phase,
     active = phase === "active",
+    detached = active && s.session.client_attached === false,
     working = ["starting", "stopping"].includes(phase),
     recovery = phase === "cleanup_required",
     enabled = active || phase === "starting" || recovery,
@@ -92,6 +105,7 @@ function sessionView(s) {
   toggle.ariaChecked = String(enabled);
   toggle.ariaBusy = String(working);
   toggle.disabled = !connected || !!sessionPending || phase === "stopping";
+  resetButtons();
   toggle.title = I18n.t(
     recovery
       ? "Восстановить Диск"
@@ -99,15 +113,17 @@ function sessionView(s) {
         ? "Выключить прокси и восстановить Диск"
         : "Включить прокси",
   );
-  $("session-title").textContent = active
-    ? I18n.t("Прокси включён")
-    : phase === "starting"
-      ? I18n.t("Запуск прокси")
-      : phase === "stopping"
-        ? I18n.t("Восстанавливается клиент")
-        : phase === "cleanup_required"
-          ? I18n.t("Ошибка восстановления")
-          : I18n.t("Прокси выключен");
+  $("session-title").textContent = detached
+    ? I18n.t("Диск не подключён к прокси")
+    : active
+      ? I18n.t("Прокси включён")
+      : phase === "starting"
+        ? I18n.t("Запуск прокси")
+        : phase === "stopping"
+          ? I18n.t("Восстанавливается клиент")
+          : phase === "cleanup_required"
+            ? I18n.t("Ошибка восстановления")
+            : I18n.t("Прокси выключен");
   $("mode").disabled = working;
   if (document.activeElement !== $("mode")) $("mode").value = s.mode;
   const clientScope = s.session.certificate_scope === "client";
@@ -115,27 +131,53 @@ function sessionView(s) {
     active &&
     (clientScope
       ? s.session.certificate_ready === false
-      : s.session.ca_trusted === false && s.tls?.client?.ok !== true);
-  const clientError = active && s.tls?.client?.ok === false;
-  const upstreamError = active && s.tls?.upstream?.ok === false;
-  const problem =
-    missing ||
-    clientError ||
-    upstreamError ||
-    s.log_error ||
-    s.session.error_detail;
-  $("tls-warning").hidden = !problem;
-  $("tls-message").textContent = missing
+      : s.session.ca_trusted === false);
+  const relevant = (side) =>
+    !s.session.client_connected_at ||
+    !side?.at ||
+    side.at >= s.session.client_connected_at;
+  const clientError =
+    active && s.tls?.client?.ok === false && relevant(s.tls.client);
+  const upstreamError =
+    active && s.tls?.upstream?.ok === false && relevant(s.tls.upstream);
+  const message = missing
     ? clientScope
-      ? I18n.t("Файл сертификата Диска недоступен или изменён.")
-      : I18n.t("Сертификат больше не находится в доверенных Windows.")
-    : clientError
-      ? I18n.t("Диск отклонил TLS-соединение. Причина — в журнале.")
-      : upstreamError
-        ? I18n.t("Ошибка TLS между прокси и Яндексом. Причина — в журнале.")
-        : I18n.t(s.log_error || s.session.error_detail) || "";
-  $("repair-ca").hidden = !missing || clientScope;
-  $("restart-client").hidden = !clientError || missing;
+      ? "Файл сертификата Диска недоступен или изменён."
+      : "Сертификат больше не находится в доверенных Windows."
+    : detached
+      ? s.session.client_connection === "limited"
+        ? "Не удалось переподключить Диск. Нажмите «Перезапустить Диск»."
+        : "Подключение Диска к прокси восстанавливается."
+      : clientError
+        ? "Диск отклонил TLS-соединение. Причина — в журнале."
+        : upstreamError
+          ? "Ошибка TLS между прокси и Яндексом. Причина — в журнале."
+          : s.log_error || s.session.error_detail || "";
+  const repair =
+    missing && !clientScope
+      ? ["Восстановить доверие", "/api/repair-ca"]
+      : !missing && (clientError || detached)
+        ? ["Перезапустить Диск", "/api/restart-client"]
+        : null;
+  const upstreamOnly = upstreamError && !missing && !detached && !clientError;
+  const transientUpstream =
+    upstreamOnly &&
+    !/certificate|unknown ca|cert_verify/i.test(s.tls.upstream.error || "");
+  Toasts.problem("session", message, {
+    delay: transientUpstream ? 10000 : 0,
+    cooldown: transientUpstream ? 300000 : 0,
+    scope: upstreamOnly ? s.session.session || s.session.started || "" : "",
+    action: repair
+      ? {
+          label: repair[0],
+          async onClick() {
+            await action(repair[1]);
+            toast("Команда отправлена. Результат появится в журнале.", "info");
+            await refresh();
+          },
+        }
+      : undefined,
+  });
   $("inventory-status").hidden =
     !s.inventory?.scanning || s.inventory.updated_at !== null;
   Toasts.problem(
@@ -262,13 +304,6 @@ function renderRows(data) {
       );
       actions.append(time);
     }
-    if (filter !== "downloaded" && row.status !== "local") {
-      const direct = node("a", "row-action", I18n.t("Скачать…"));
-      direct.href = "/recovery?" + new URLSearchParams({ q: row.path });
-      direct.target = "_blank";
-      direct.rel = "noopener";
-      actions.append(direct);
-    }
     if (
       filter !== "downloaded" &&
       snapshot.session.phase === "active" &&
@@ -351,6 +386,7 @@ function renderEvents(events) {
   ListMotion.render(target, entries);
 }
 function renderMetrics(state, fresh = true) {
+  const counters = state.display_counters || state.counters;
   $("nav-count").textContent = number(state.pending);
   const d = state.downloads;
   $("nav-downloaded").textContent = number(d.count);
@@ -369,21 +405,83 @@ function renderMetrics(state, fresh = true) {
         value: d.count,
       },
       errors: {
-        text: number(state.counters.http500),
-        value: state.counters.http500 || 0,
+        text: number(counters.http500),
+        value: counters.http500 || 0,
       },
       deferred: {
         text: number(state.counts.deferred),
         value: state.counts.deferred || 0,
       },
       network: {
-        text: bytes(state.counters.network_bytes),
-        value: state.counters.network_bytes || 0,
+        text: bytes(counters.network_bytes),
+        value: counters.network_bytes || 0,
       },
     },
     $("session-title").textContent,
     fresh,
   );
+}
+function resetButtons() {
+  for (const [id, kind] of [
+    ["reset-errors", "http500"],
+    ["reset-network", "network_bytes"],
+    ["reset-deferred", "deferred"],
+  ]) {
+    $(id).disabled =
+      !connected ||
+      !!resetPending ||
+      (kind === "deferred" &&
+        (snapshot?.session.phase !== "active" ||
+          snapshot?.session.client_attached === false ||
+          !snapshot?.counts.deferred));
+    $(id).ariaBusy = String(resetPending === kind);
+  }
+}
+for (const [id, counter] of [
+  ["reset-errors", "http500"],
+  ["reset-network", "network_bytes"],
+  ["reset-deferred", "deferred"],
+]) {
+  $(id).addEventListener("click", async () => {
+    if ($(id).disabled || resetPending) return;
+    resetPending = counter;
+    resetButtons();
+    try {
+      if (counter === "deferred") {
+        const result = await action("/api/statistics/retry-deferred");
+        toast(I18n.t("Возвращено в очередь: {0}", [result.queued]), "success");
+      } else {
+        const result = await action("/api/statistics/reset", { counter });
+        Toasts.show(
+          counter === "http500"
+            ? "Счётчик HTTP 500 сброшен."
+            : "Счётчик трафика сброшен.",
+          {
+            type: "success",
+            key: "statistics-reset",
+            duration: 12000,
+            action: {
+              label: "Отменить",
+              onClick: async () => {
+                await action("/api/statistics/undo", {
+                  revision: result.revision,
+                  context: result.context,
+                });
+                await refresh(["state"]);
+                toast("Сброс отменён.", "success");
+              },
+            },
+          },
+        );
+      }
+      await refresh(["state", ...(counter === "deferred" ? ["files"] : [])]);
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      resetPending = null;
+      resetButtons();
+    }
+  });
 }
 async function refresh(topics = null) {
   if (busy) {
@@ -462,6 +560,8 @@ async function refresh(topics = null) {
     } else refreshQueued = true;
   } catch (e) {
     connected = false;
+    Toasts.problem("session", "");
+    resetButtons();
     MeterBoard.setConnected(false);
     Toasts.problem(
       "connection",
@@ -629,25 +729,6 @@ for (const [button, input, kind] of [
     }
   });
 }
-for (const [id, path] of [
-  ["repair-ca", "/api/repair-ca"],
-  ["restart-client", "/api/restart-client"],
-]) {
-  $(id).addEventListener("click", async () => {
-    $(id).disabled = true;
-    try {
-      await action(path);
-      toast(
-        I18n.t("Команда отправлена. Результат появится в журнале."),
-        "info",
-      );
-    } catch (error) {
-      toast(error.message);
-    } finally {
-      $(id).disabled = false;
-    }
-  });
-}
 $("setup-cancel").addEventListener("click", () => {
   if (!setupPending) $("setup-dialog").close();
 });
@@ -685,12 +766,18 @@ async function requestStart() {
   $("consent-error").hidden = true;
   const machineCertificate = snapshot.certificate_scope === "local_machine";
   for (const [id, source] of [
-    ["certificate-consent-intro", machineCertificate
-      ? "Прокси временно добавит сертификат в доверенные корневые сертификаты компьютера Windows. Ему смогут доверять приложения всех пользователей. Windows может запросить права администратора. Добавленный прокси сертификат удаляется при остановке."
-      : "Прокси временно добавит сертификат в доверенные корневые сертификаты текущего пользователя Windows. Ему смогут доверять и другие приложения. Добавленный прокси сертификат удаляется при остановке."],
-    ["certificate-consent-label", machineCertificate
-      ? "Разрешаю временно добавить этот сертификат в доверенные корневые сертификаты компьютера Windows (для всех пользователей)."
-      : "Разрешаю временно добавить этот сертификат в доверенные корневые сертификаты моего пользователя Windows."],
+    [
+      "certificate-consent-intro",
+      machineCertificate
+        ? "Прокси временно добавит сертификат в доверенные корневые сертификаты компьютера Windows. Ему смогут доверять приложения всех пользователей. Windows может запросить права администратора. Добавленный прокси сертификат удаляется при остановке."
+        : "Прокси временно добавит сертификат в доверенные корневые сертификаты текущего пользователя Windows. Ему смогут доверять и другие приложения. Добавленный прокси сертификат удаляется при остановке.",
+    ],
+    [
+      "certificate-consent-label",
+      machineCertificate
+        ? "Разрешаю временно добавить этот сертификат в доверенные корневые сертификаты компьютера Windows (для всех пользователей)."
+        : "Разрешаю временно добавить этот сертификат в доверенные корневые сертификаты моего пользователя Windows.",
+    ],
   ]) {
     $(id).setAttribute("data-i18n", source);
     $(id).textContent = I18n.t(source);
@@ -753,6 +840,7 @@ $("consent-start").addEventListener("click", async () => {
   }
 });
 I18n.onChange(() => {
+  thumbnailToggleView();
   setupView(setupPending);
   renderListHeader();
   if (snapshot) {

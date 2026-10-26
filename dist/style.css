@@ -65,7 +65,7 @@ select:focus-visible {
   gap: 12px;
   align-items: center;
   padding: 0 12px;
-  margin-bottom: 52px;
+  margin-bottom: 32px;
 }
 .brand-icon {
   display: block;
@@ -92,8 +92,12 @@ select:focus-visible {
 .nav > .i18n-text {
   width: auto;
   flex: 1;
+  min-width: 0;
   font-size: inherit;
   text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .locale-switcher {
   position: relative;
@@ -205,7 +209,7 @@ body.diagnostics-page {
   }
 }
 .nav-title {
-  margin: 0 14px 15px;
+  margin: 0 11px 10px;
   color: #728199;
   font-size: 10px;
   letter-spacing: 1.7px;
@@ -215,21 +219,26 @@ body.diagnostics-page {
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 12px 13px;
-  margin-bottom: 5px;
+  min-height: 38px;
+  padding: 8px 10px;
+  margin-bottom: 3px;
   text-align: left;
   color: #a2afc1;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 7px;
   font-size: 12px;
+  line-height: 20px;
 }
-.nav span {
+.nav > span:not(.i18n-text) {
+  flex: 0 0 20px;
   width: 20px;
   font-size: 18px;
+  line-height: 20px;
   text-align: center;
 }
 .nav b {
+  flex-shrink: 0;
   margin-left: auto;
   color: #bcd0ff;
   font-size: 11px;
@@ -436,6 +445,7 @@ input {
   margin-bottom: 24px;
 }
 .metrics article {
+  position: relative;
   padding: 18px 19px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -465,6 +475,52 @@ input {
 }
 .metric-deferred strong {
   color: #edca77;
+}
+.metrics article:has(.metric-action) > span {
+  display: block;
+  padding-right: 22px;
+}
+.metric-action {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  opacity: 0.65;
+}
+.metric-action:hover:not(:disabled),
+.metric-action:focus-visible {
+  opacity: 1;
+  color: #e3edfc;
+  background: #ffffff0a;
+  border-color: var(--line);
+}
+.metric-action[aria-busy="true"] svg {
+  animation: busy-spin 0.8s linear infinite;
+}
+.toast-action {
+  margin-top: 10px;
+  padding: 5px 10px;
+  border: 1px solid #4b655d;
+  border-radius: 5px;
+  color: var(--toast-accent);
+  background: #ffffff08;
+  font-size: 12px;
+}
+.toast-action:hover:not(:disabled) {
+  background: #ffffff12;
+}
+@media (prefers-reduced-motion: reduce) {
+  .metric-action[aria-busy="true"] svg {
+    animation: none;
+  }
 }
 .board-open-button {
   display: grid;
@@ -786,7 +842,39 @@ body.board-open {
 }
 .table-tools {
   display: flex;
+  align-items: stretch;
   gap: 8px;
+}
+.preview-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  gap: 7px;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid #303d50;
+  border-radius: 6px;
+  background: #101722;
+  color: var(--muted);
+  font-size: 12px;
+}
+.preview-toggle[aria-pressed="true"] {
+  background: #22334e;
+  border-color: #405a7c;
+  color: #c0d5ff;
+}
+.preview-toggle:hover {
+  border-color: var(--blue);
+  color: #e5ebf4;
+}
+.preview-toggle[aria-pressed="true"] .preview-off-mark {
+  display: none;
+}
+@media (max-width: 600px) {
+  .preview-toggle > span {
+    display: none;
+  }
 }
 .search {
   display: flex;
@@ -1123,7 +1211,12 @@ tbody tr:hover {
   bottom: max(20px, env(safe-area-inset-bottom));
   width: min(420px, calc(100vw - 32px));
   max-height: calc(100dvh - 40px);
+  overflow-x: hidden;
   overflow-y: auto;
+  color-scheme: dark;
+  scrollbar-width: thin;
+  scrollbar-color: #3b4d67 #151b25;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1142,6 +1235,7 @@ tbody tr:hover {
   border-radius: 12px;
   padding: 16px 12px 16px 16px;
   box-shadow: 0 12px 40px #0006;
+  transform-origin: bottom right;
   pointer-events: auto;
 }
 .toast-success {
@@ -1406,7 +1500,8 @@ dd {
     font-size: 0;
     justify-content: center;
     gap: 0;
-    padding: 12px 5px;
+    min-height: 44px;
+    padding: 10px 5px;
   }
   main {
     margin-left: 64px;
@@ -1460,18 +1555,6 @@ dd {
 }
 .field {
   margin-bottom: 7px;
-}
-.tls-warning {
-  color: #f2b9a4;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  font-size: 12px;
-  margin: 0 0 18px;
-}
-.tls-warning[hidden] {
-  display: none;
 }
 .activity-heading a {
   font-size: 11px;

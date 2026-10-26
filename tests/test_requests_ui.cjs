@@ -38,6 +38,17 @@ assert.equal(get('original').textContent,'','Locale changes cannot restore raw h
 respond(requests.shift(),{id:'private',request_headers:[['Authorization','[hidden]']]});await tick();
 languageListeners.forEach(fn=>fn());
 assert.ok(!get('original').textContent.includes('SECRET'));
+const originalTranslate=translations.t;
+translations.t=value=>value==='[скрыто]'?'[redacted]':originalTranslate(value);
+context.maskedRecord={method:'GET',url:'https://example.test/?token=[скрыто]',request_headers:[['Authorization','[скрыто]']]};
+const localizedOriginal=vm.runInContext('lastDetailMasked=true; format(maskedRecord)',context);
+assert.ok(localizedOriginal.includes('token=[redacted]')&&localizedOriginal.includes('Authorization: [redacted]'));
+assert.equal(context.maskedRecord.request_headers[0][1],'[скрыто]','Localization does not modify captured headers');
+const unmaskedOriginal=vm.runInContext('lastDetailMasked=false; format(maskedRecord)',context);
+assert.ok(unmaskedOriginal.includes('Authorization: [скрыто]'),'Unmasked originals keep their literal values');
+context.maskedRecord.original_available=false;
+assert.ok(vm.runInContext('format(maskedRecord)',context).includes('Authorization: [redacted]'),'Saved masked records stay localized even if originals were requested');
+translations.t=originalTranslate;
 vm.runInContext('selected="different"; details()',context);
 languageListeners.forEach(fn=>fn());
 assert.equal(get('original').textContent,'','Locale changes cannot restore headers from a previous selection');

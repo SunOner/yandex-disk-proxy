@@ -6,7 +6,6 @@ const LivePanel = (() => {
     "events",
     "requests",
     "operations",
-    "recovery",
     "metrics",
   ]);
   function subscribe(

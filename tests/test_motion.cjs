@@ -342,7 +342,7 @@ async function main() {
     photo,
     "Status updates preserve decoded thumbnails and object URLs",
   );
-  for (const page of ["index", "requests", "recovery"]) {
+  for (const page of ["index", "requests"]) {
     const html = fs.readFileSync(
       path.join(__dirname, "../dist", page + ".html"),
       "utf8",

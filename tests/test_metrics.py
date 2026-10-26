@@ -29,6 +29,35 @@ class Statistics(unittest.TestCase):
             initial=True,
         )
 
+    def test_retired_download_source_does_not_change_native_history_or_legacy_checkpoints(self):
+        self.initial(counters={"http500": 4, "network_bytes": 200})
+        self.metrics.reset_display("http500", 4)
+        data = json.loads(
+            self.metrics.db.execute("SELECT data FROM state WHERE id=1").fetchone()[0]
+        )
+        data["sources"].update(direct_files=2, direct_bytes=100)
+        data["totals"].update(direct_files=2, direct_bytes=100)
+        with self.metrics.db:
+            self.metrics.db.execute("UPDATE state SET data=? WHERE id=1", (json.dumps(data),))
+        self.metrics.close()
+        restarted = Metrics(self.path)
+        try:
+            restarted.sample(
+                {"native_files": 11, "native_bytes": 1100, "direct_files": 999},
+                {"http500": 4, "network_bytes": 200},
+                {},
+                {},
+                now=self.now + 5,
+                initial=True,
+            )
+            self.assertEqual(restarted.totals["native_files"], 11)
+            self.assertEqual(restarted.totals["direct_files"], 2)
+            self.assertEqual(restarted.sources["direct_files"], 2)
+            self.assertEqual(restarted.displayed(restarted.counters)["http500"], 0)
+            self.assertEqual(restarted.counters["network_bytes"], 200)
+        finally:
+            restarted.close()
+
     def test_restart_restores_counters_without_recounting(self):
         self.initial(counters={"http500": 4, "network_bytes": 200})
         self.metrics.sample(
@@ -76,6 +105,62 @@ class Statistics(unittest.TestCase):
         finally:
             restarted.close()
 
+    def test_panel_reset_survives_sampling_and_restart_without_erasing_history(self):
+        self.initial(counters={"http500": 12, "network_bytes": 900})
+        before = self.metrics.read("1h", now=self.now)
+        revision = self.metrics.reset_display("http500", 12)
+        self.assertEqual(
+            self.metrics.displayed({"http500": 14, "network_bytes": 950}),
+            {"http500": 2, "network_bytes": 950},
+        )
+        after = self.metrics.read("1h", now=self.now)
+        self.assertEqual(after["points"], before["points"])
+        self.assertEqual(after["totals"], before["totals"])
+        self.metrics.sample(
+            {"native_files": 10, "native_bytes": 1000},
+            {"http500": 14, "network_bytes": 950},
+            {},
+            {},
+            now=self.now + 5,
+            elapsed=5,
+        )
+        self.metrics.close()
+        again = Metrics(self.path)
+        try:
+            self.assertEqual(again.displayed(again.counters)["http500"], 2)
+            self.assertEqual(again.totals["native_http500"], 14)
+            again.undo_display_reset(revision)
+            self.assertEqual(again.displayed(again.counters)["http500"], 14)
+            self.assertEqual(again.counters["network_bytes"], 950)
+        finally:
+            again.close()
+
+    def test_only_latest_panel_reset_can_be_undone(self):
+        self.initial(counters={"http500": 12, "network_bytes": 900})
+        first = self.metrics.reset_display("http500", 12)
+        second = self.metrics.reset_display("network_bytes", 900)
+        with self.assertRaises(ValueError):
+            self.metrics.undo_display_reset(first)
+        self.metrics.undo_display_reset(second)
+        self.assertEqual(
+            self.metrics.displayed(self.metrics.counters), {"http500": 0, "network_bytes": 900}
+        )
+        with self.assertRaises(ValueError):
+            self.metrics.reset_display("deferred", 12)
+        with self.assertRaises(ValueError):
+            self.metrics.undo_display_reset(second)
+
+    def test_failed_reset_does_not_change_displayed_values(self):
+        self.initial(counters={"http500": 12})
+        with self.metrics.db:
+            self.metrics.db.execute(
+                "CREATE TRIGGER reject_reset BEFORE UPDATE ON state BEGIN SELECT RAISE(ABORT,'blocked'); END"
+            )
+        with self.assertRaises(sqlite3.Error):
+            self.metrics.reset_display("http500", 12)
+        self.assertEqual(self.metrics.displayed(self.metrics.counters)["http500"], 12)
+        self.assertIsNone(self.metrics.last_reset)
+
     def test_grouped_range_includes_the_current_partial_interval(self):
         self.initial()
         self.metrics.sample(
@@ -118,8 +203,8 @@ class Statistics(unittest.TestCase):
                 "size": 1024,
             }
         ]
-        self.metrics.import_downloads(native, [], now=self.now)
-        self.metrics.import_downloads(native, [], now=self.now)
+        self.metrics.import_downloads(native, now=self.now)
+        self.metrics.import_downloads(native, now=self.now)
         result = self.metrics.read("6h", now=self.now)
         old = next(point for point in result["points"] if point.get("native_files") == 1)
         self.assertEqual(old["native_bytes"], 1024)
@@ -129,7 +214,7 @@ class Statistics(unittest.TestCase):
         again = Metrics(self.path)
         try:
             self.assertTrue(again.imported)
-            again.import_downloads(native, [], now=self.now)
+            again.import_downloads(native, now=self.now)
             self.assertEqual(
                 sum(p.get("native_files", 0) for p in again.read("6h", now=self.now)["points"]), 1
             )
@@ -201,7 +286,7 @@ class Statistics(unittest.TestCase):
         }
         self.metrics.db.execute("PRAGMA query_only=ON")
         with self.assertRaises(sqlite3.OperationalError):
-            self.metrics.import_downloads([old], [], now=self.now)
+            self.metrics.import_downloads([old], now=self.now)
         self.metrics.db.execute("PRAGMA query_only=OFF")
         self.metrics.sample(
             {"native_files": 2, "native_bytes": 200},
@@ -211,7 +296,7 @@ class Statistics(unittest.TestCase):
             now=self.now + 5,
             elapsed=5,
         )
-        self.metrics.import_downloads([old, new], [], now=self.now + 5)
+        self.metrics.import_downloads([old, new], now=self.now + 5)
         result = self.metrics.read("1h", now=self.now + 5)
         self.assertEqual(sum(point.get("native_files", 0) for point in result["points"]), 2)
 

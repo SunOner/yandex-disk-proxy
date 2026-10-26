@@ -32,7 +32,7 @@ class LiveInventory(unittest.TestCase):
         model.files = {}
         model.downloads = History(self.root / "history.json")
         model.log = Mock()
-        model.recovery = Mock()
+        model.preview_session = Mock()
         model.traffic = Mock()
         model.session = Mock(return_value={"phase": "active"})
         self.model = model
@@ -70,13 +70,11 @@ class LiveInventory(unittest.TestCase):
         self.assertIs(row, self.model.files["old.bin"])
         self.assertEqual(row["attempts"], 5)
         self.assertEqual(row["http500"], 3)
-        self.model.recovery.cancel_paths.assert_called_with([])
 
     def test_user_unpin_or_delete_removes_stale_count_and_cancels_direct_job(self):
         self.refresh({"a": item("a"), "b": item("b")})
         self.refresh({}, seen={"a"})
         self.assertEqual(self.model.files, {})
-        self.assertEqual(set(self.model.recovery.cancel_paths.call_args.args[0]), {"a", "b"})
         self.assertEqual(self.model.downloads.pending, {})
 
     def test_inaccessible_subfolder_is_not_treated_as_user_unpin(self):

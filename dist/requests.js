@@ -76,7 +76,7 @@ function renderSummary(data) {
           switchView("requests");
         };
         cell.append(b);
-      } else cell.textContent = row.endpoint;
+      } else cell.textContent = maskedText(row.endpoint);
       tr.append(cell);
       for (const value of [
         row.count,
@@ -115,6 +115,11 @@ async function json(url, options = {}) {
   if (!response.ok)
     throw new Error(I18n.t(value.error) || I18n.t("Ошибка загрузки журнала"));
   return value;
+}
+function maskedText(value, masked = true) {
+  return masked
+    ? String(value ?? "").replaceAll("[скрыто]", I18n.t("[скрыто]"))
+    : value;
 }
 function format(row) {
   if (view === "events")
@@ -160,7 +165,7 @@ function format(row) {
       row.received_bytes !== undefined
         ? I18n.t("Получено: ") + bytes(row.received_bytes)
         : "",
-      row.error,
+      I18n.t(row.error),
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -170,16 +175,32 @@ function format(row) {
       row.host,
       row.tls_version,
       clock(row.timestamp),
-      row.error || I18n.t("Соединение установлено"),
+      I18n.t(row.error) || I18n.t("Соединение установлено"),
     ]
       .filter(Boolean)
       .join("\n");
   const headers = (values) =>
-    (values || []).map(([key, value]) => key + ": " + value).join("\n");
+    (values || [])
+      .map(
+        ([key, value]) =>
+          key +
+          ": " +
+          maskedText(
+            value,
+            lastDetailMasked || row.original_available === false,
+          ),
+      )
+      .join("\n");
   return [
     clock(row.timestamp),
     I18n.t(row.operation_label),
-    [row.method, row.url, row.http_version].filter(Boolean).join(" "),
+    [
+      row.method,
+      maskedText(row.url, lastDetailMasked || row.original_available === false),
+      row.http_version,
+    ]
+      .filter(Boolean)
+      .join(" "),
     headers(row.request_headers),
     row.status
       ? [row.response_version, row.status, row.reason].filter(Boolean).join(" ")
@@ -193,9 +214,11 @@ function format(row) {
       : phases[row.phase] || I18n.t("Запрос выполняется"),
     row.route
       ? I18n.t("Маршрут: {0}", [
-          row.client === "recovery"
-            ? I18n.t("прямая загрузка")
-            : I18n.t("Диск через прокси"),
+          row.client === "preview"
+            ? I18n.t("Миниатюра")
+            : row.route === "proxy"
+              ? I18n.t("Диск через прокси")
+              : I18n.t("Прямое соединение"),
         ])
       : "",
     row.headers_ms !== undefined
@@ -237,7 +260,7 @@ function format(row) {
     row.anomalies?.length
       ? row.anomalies.map((a) => anomalyLabels[a] || a).join(" · ")
       : "",
-    row.error,
+    I18n.t(row.error),
     row.headers_truncated
       ? I18n.t("Часть заголовков обрезана по лимиту размера")
       : "",
@@ -323,7 +346,7 @@ function render(rows, total, dropped = 0) {
         "div",
         view === "events" ? "record-message" : "record-url",
         I18n.t(row.message) ||
-          row.url ||
+          maskedText(row.url) ||
           row.host ||
           I18n.t(row.operation_label),
       ),

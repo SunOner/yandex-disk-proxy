@@ -12,6 +12,8 @@ let callback,
   pump,
   clock = 100000,
   serial = 0;
+let previewPreference = true;
+const preferenceListeners = [];
 class Node {
   constructor(tag = "span") {
     this.tag = tag;
@@ -53,7 +55,20 @@ const document = {
 const context = vm.createContext({
   document,
   window: { addEventListener: (k, f) => (windowEvents[k] = f) },
-  I18n: { t: (x) => x },
+  I18n: {
+    t: (x) => x,
+    preferences: {
+      get: () => previewPreference,
+      set(key, value) {
+        assert.equal(key, "thumbnails");
+        previewPreference = value;
+        preferenceListeners.forEach((listener) => listener(key, value));
+      },
+      onChange(listener) {
+        preferenceListeners.push(listener);
+      },
+    },
+  },
   Date: { now: () => clock },
   AbortController,
   URL: {
@@ -88,7 +103,7 @@ const thumbnails = vm.runInContext("Thumbnails", context);
 const state = {
   nonce: "panel-nonce",
   preview_context: "account-one",
-  recovery: { credentials_seen: true },
+  preview: { credentials_seen: true },
 };
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const see = (node, visible = true) =>
@@ -101,10 +116,11 @@ function respond(request, type = "image/jpeg", ok = true, retry = "60") {
   });
 }
 async function main() {
+  assert.equal(thumbnails.enabled, true);
   ["a.jpg", "b.mov", "c.heic", "file.txt"].forEach((name, i) =>
     thumbnails.decorate(nodes[i], { path: name, size: 10 }),
   );
-  thumbnails.configure({ ...state, recovery: {} });
+  thumbnails.configure({ ...state, preview: {} });
   thumbnails.sync(container);
   assert.equal(observed.size, 3);
   nodes.slice(0, 3).forEach((n) => see(n));
@@ -199,6 +215,60 @@ async function main() {
   windowEvents.pagehide();
   respond(last);
   await tick();
+  assert.equal(nodes[0].children.length, 0);
+  windowEvents.pageshow();
+  see(nodes[0]);
+  respond(requests.shift());
+  await tick();
+  const lateDecode = images.at(-1);
+  thumbnails.setEnabled(false);
+  assert.equal(previewPreference, false);
+  assert.equal(observed.size, 0);
+  lateDecode.onload();
+  assert.equal(
+    nodes[0].children.length,
+    0,
+    "Disabling previews discards pending image decoding",
+  );
+  thumbnails.configure(state);
+  thumbnails.sync(container);
+  windowEvents.pageshow();
+  see(nodes[0]);
+  pump();
+  assert.equal(
+    requests.length,
+    0,
+    "Disabled previews do not fetch or observe rows",
+  );
+  thumbnails.setEnabled(true);
+  see(nodes[0]);
+  const disabledRequest = requests.shift();
+  thumbnails.setEnabled(false);
+  assert.equal(
+    disabledRequest.options.signal.aborted,
+    true,
+    "Turning previews off cancels in-flight requests",
+  );
+  thumbnails.setEnabled(true);
+  see(nodes[0]);
+  const enabledRequest = requests.shift();
+  respond(disabledRequest);
+  await tick();
+  assert.equal(
+    nodes[0].children.length,
+    0,
+    "A rapid off/on cycle cannot restore a stale response",
+  );
+  respond(enabledRequest);
+  await tick();
+  images.at(-1).onload();
+  assert.equal(nodes[0].children.length, 1, "Re-enabled previews load again");
+  context.I18n.preferences.set("thumbnails", false);
+  assert.equal(
+    thumbnails.enabled,
+    false,
+    "External preference changes disable previews too",
+  );
   assert.equal(nodes[0].children.length, 0);
   assert.equal(
     revoked.length,

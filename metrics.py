@@ -36,7 +36,10 @@ COUNTERS = (
     "timeout",
     "tls",
 )
-SOURCES = ("native_files", "native_bytes", "direct_files", "direct_bytes")
+RESETTABLE = ("http500", "network_bytes")
+SOURCES = ("native_files", "native_bytes")
+# Keep historical columns and checkpoints so existing databases and rollback builds stay readable.
+LEGACY_SOURCES = ("direct_files", "direct_bytes")
 OPERATIONS = {
     "requests": "http",
     "http_errors": "http_errors",
@@ -48,7 +51,15 @@ OPERATIONS = {
     "duration_ms": "http_duration_ms",
     "timed_requests": "http_timed",
 }
-ADDITIVE = (*SOURCES, *OPERATIONS, "proxy_bytes", "native_http500", "tls_errors", "blocked")
+ADDITIVE = (
+    *SOURCES,
+    *LEGACY_SOURCES,
+    *OPERATIONS,
+    "proxy_bytes",
+    "native_http500",
+    "tls_errors",
+    "blocked",
+)
 GAUGES = ("pending_files", "pending_bytes", "deferred_files", "local_files")
 
 
@@ -101,17 +112,62 @@ class Metrics:
             self.sources = {
                 key: number(value)
                 for key, value in saved.get("sources", {}).items()
-                if key in SOURCES
+                if key in (*SOURCES, *LEGACY_SOURCES)
             }
             self.current = {key: number(saved.get("current", {}).get(key, 0)) for key in GAUGES}
             self.saved_at = saved.get("saved_at")
             self.imported = bool(saved.get("imported", False))
+            self.display_offsets = {
+                key: number(saved.get("display_offsets", {}).get(key, 0)) for key in RESETTABLE
+            }
+            self.reset_revision = number(saved.get("reset_revision", 0))
+            self.last_reset = saved.get("last_reset")
             self.previous_ops = None
             self.previous_counters = self.counters.copy()
             self.last_prune = 0
         except Exception:
             self.db.close()
             raise
+
+    def displayed(self, counters):
+        with self.lock:
+            return {
+                key: max(0, number(counters.get(key)) - self.display_offsets[key])
+                for key in RESETTABLE
+            }
+
+    def _save_display(self, offsets, revision, undo):
+        row = self.db.execute("SELECT data FROM state WHERE id=1").fetchone()
+        data = json.loads(row[0]) if row else {}
+        data.update(display_offsets=offsets, reset_revision=revision, last_reset=undo)
+        with self.db:
+            self.db.execute(
+                "INSERT INTO state VALUES(1,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
+                (json.dumps(data, separators=(",", ":")),),
+            )
+        self.display_offsets, self.reset_revision, self.last_reset = offsets, revision, undo
+
+    def reset_display(self, key, current):
+        if key not in RESETTABLE:
+            raise ValueError("Этот счётчик нельзя сбросить")
+        with self.lock:
+            revision = self.reset_revision + 1
+            undo = {"key": key, "offset": self.display_offsets[key], "revision": revision}
+            self._save_display({**self.display_offsets, key: number(current)}, revision, undo)
+            return revision
+
+    def undo_display_reset(self, revision):
+        with self.lock:
+            if (
+                type(revision) is not int
+                or not self.last_reset
+                or self.last_reset.get("revision") != revision
+            ):
+                raise ValueError("Этот сброс уже нельзя отменить")
+            undo = self.last_reset
+            self._save_display(
+                {**self.display_offsets, undo["key"]: undo["offset"]}, self.reset_revision + 1, None
+            )
 
     def sample(self, source, counters, operations, current, *, now=None, elapsed=0, initial=False):
         now = time.time() if now is None else now
@@ -126,6 +182,7 @@ class Metrics:
                 totals[key] += change
                 if not initial:
                     delta[key] = change
+            sources.update({key: self.sources.get(key, 0) for key in LEGACY_SOURCES})
             snapshot = {key: number(counters.get(key)) for key in COUNTERS}
             for key, source_key in (
                 ("proxy_bytes", "network_bytes"),
@@ -151,6 +208,9 @@ class Metrics:
                 "current": gauges,
                 "saved_at": now,
                 "imported": self.imported,
+                "display_offsets": self.display_offsets,
+                "reset_revision": self.reset_revision,
+                "last_reset": self.last_reset,
             }
             columns = (*ADDITIVE, *GAUGES)
             values = [delta[key] for key in ADDITIVE] + [gauges[key] for key in GAUGES]
@@ -187,31 +247,30 @@ class Metrics:
                 self.last_prune = now
                 self.db.execute("PRAGMA incremental_vacuum(32)")
 
-    def import_downloads(self, native, direct, *, now=None):
+    def import_downloads(self, native, *, now=None):
         """Import known confirmation times once, without copying file identities."""
         now = time.time() if now is None else now
         with self.lock:
             if self.imported:
                 return
             grouped = collections.defaultdict(collections.Counter)
-            for rows, kind in ((native, "native"), (direct, "direct")):
-                for row in rows:
-                    try:
-                        stamp = row.get("confirmed_at") if kind == "native" else row.get("updated")
-                        at = (
-                            datetime.fromisoformat(stamp).timestamp()
-                            if isinstance(stamp, str)
-                            else float(stamp)
-                        )
-                    except (TypeError, ValueError, OverflowError):
-                        continue
-                    if not math.isfinite(at) or at > min(now, self.since):
-                        continue
-                    for step, retention in TIERS:
-                        if at >= now - retention:
-                            values = grouped[(step, int(at) // step * step)]
-                            values[kind + "_files"] += 1
-                            values[kind + "_bytes"] += number(row.get("size"))
+            for row in native:
+                try:
+                    stamp = row.get("confirmed_at")
+                    at = (
+                        datetime.fromisoformat(stamp).timestamp()
+                        if isinstance(stamp, str)
+                        else float(stamp)
+                    )
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                if not math.isfinite(at) or at > min(now, self.since):
+                    continue
+                for step, retention in TIERS:
+                    if at >= now - retention:
+                        values = grouped[(step, int(at) // step * step)]
+                        values["native_files"] += 1
+                        values["native_bytes"] += number(row.get("size"))
             columns = (*ADDITIVE, *GAUGES)
             additive = ",".join(f"{key}=buckets.{key}+excluded.{key}" for key in SOURCES)
             sql = f"INSERT INTO buckets(step,ts,seconds,sampled_at,{','.join(columns)}) VALUES({','.join('?' for _ in range(4 + len(columns)))}) ON CONFLICT(step,ts) DO UPDATE SET {additive}"

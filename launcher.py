@@ -133,5 +133,20 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except Exception as exc:
+        try:
+            import traceback
+
+            import settings
+            from diagnostics import JsonLog, redact_text
+
+            JsonLog(settings.RUNTIME / "crashes.jsonl", 1024**2, 1).append(
+                {
+                    "timestamp": __import__("time").time(),
+                    "type": type(exc).__name__,
+                    "traceback": redact_text("".join(traceback.format_exception(exc))),
+                }
+            )
+        except Exception:
+            pass
         print("Startup failed: " + str(exc), file=sys.stderr)
         sys.exit(1)

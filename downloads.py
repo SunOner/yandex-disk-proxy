@@ -1,6 +1,7 @@
 """Persistent counts of completed Cloud Files, separate from network attempts."""
 
 import json
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,6 +22,21 @@ class History:
             atomic(self.path, self.data)
         self.by_path = {row["path"]: row for row in self.data["completed"].values()}
         self.pending = self.data.setdefault("pending", {})
+        self.retries = self.data.setdefault("deferred_retries", {})
+
+    def deferred(self, rel, now=None, save=True):
+        now = time.time() if now is None else now
+        failures = min(5, self.retries.get(rel, {}).get("failures", 0) + 1)
+        self.retries[rel] = {
+            "failures": failures,
+            "next_at": now + min(6 * 3600, 1800 * 2 ** (failures - 1)),
+        }
+        if save:
+            self.save()
+
+    def forget_pending(self, rel):
+        self.pending.pop(rel, None)
+        self.retries.pop(rel, None)
 
     def remember_pending(self, rel, metadata):
         if metadata["validated"] < metadata["size"]:
@@ -42,7 +58,10 @@ class History:
             return False
         identity = f"{metadata['root_id']}:{metadata['file_id']}:{metadata['size']}"
         if identity in self.data["completed"]:
-            self.pending.pop(rel, None)
+            changed = rel in self.pending or rel in self.retries
+            self.forget_pending(rel)
+            if changed and save:
+                self.save()
             return False
         row = {
             "path": rel,
@@ -54,7 +73,7 @@ class History:
         }
         self.data["completed"][identity] = row
         self.by_path[rel] = row
-        self.pending.pop(rel, None)
+        self.forget_pending(rel)
         if save:
             atomic(self.path, self.data)
         return True

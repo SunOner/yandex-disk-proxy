@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from fetcher import DownloadError, Transport, preview_url
+from preview_client import PreviewError, Transport, preview_url
 from thumbnails import MAX_BYTES, MAX_ENTRIES, MAX_IMAGE, Thumbnails, Unavailable
 
 JPEG = b"\xff\xd8\xff" + b"thumbnail"
@@ -24,13 +24,13 @@ class Response(io.BytesIO):
 
 class Previews(unittest.TestCase):
     def setUp(self):
-        self.recovery = SimpleNamespace(
+        self.preview_session = SimpleNamespace(
             authorization=Mock(return_value="OAuth SECRET"),
             auth="OAuth SECRET",
             lock=threading.RLock(),
         )
         self.rows = {"image.jpg": {"size": 5}, "video.mov": {"size": 6}}
-        self.cache = Thumbnails(self.recovery, self.rows.get, Mock())
+        self.cache = Thumbnails(self.preview_session, self.rows.get, Mock())
         self.addCleanup(self.cache.close)
         self.cache.transport = SimpleNamespace(
             json=Mock(return_value={"type": "file", "path": "disk:/image.jpg", "preview": LINK}),
@@ -56,7 +56,7 @@ class Previews(unittest.TestCase):
                 self.cache.get(path)
         with self.assertRaises(ValueError):
             self.cache.get("../outside.jpg")
-        self.recovery.authorization.assert_not_called()
+        self.preview_session.authorization.assert_not_called()
 
     def test_unsafe_or_oversized_responses_are_cached_as_unavailable(self):
         for response in (
@@ -85,23 +85,23 @@ class Previews(unittest.TestCase):
         self.cache.transport.open_preview.assert_not_called()
 
     def test_session_wait_has_one_shared_cooldown(self):
-        self.recovery.authorization.side_effect = DownloadError("waiting", "session")
+        self.preview_session.authorization.side_effect = PreviewError("waiting", "session")
         for path in ("image.jpg", "video.mov"):
             with self.assertRaises(Unavailable) as failure:
                 self.cache.get(path)
             self.assertEqual(failure.exception.code, 503)
-        self.assertEqual(self.recovery.authorization.call_count, 1)
+        self.assertEqual(self.preview_session.authorization.call_count, 1)
 
     def test_expired_authorization_is_rechecked_without_clearing_a_newer_session(self):
-        self.cache.transport.json.side_effect = DownloadError("expired", 401)
+        self.cache.transport.json.side_effect = PreviewError("expired", 401)
         with self.assertRaises(Unavailable):
             self.cache.get("image.jpg")
-        self.assertIsNone(self.recovery.auth)
+        self.assertIsNone(self.preview_session.auth)
         self.cache.blocked_until = 0
-        self.recovery.auth = "OAuth NEWER"
+        self.preview_session.auth = "OAuth NEWER"
         with self.assertRaises(Unavailable):
             self.cache.get("image.jpg")
-        self.assertEqual(self.recovery.auth, "OAuth NEWER")
+        self.assertEqual(self.preview_session.auth, "OAuth NEWER")
 
     def test_cache_byte_entry_and_expiry_limits_and_close(self):
         for n in range(200):

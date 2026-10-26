@@ -36,7 +36,14 @@ function get(id) {
 const context = vm.createContext({
   I18n: require("./i18n_stub.cjs")(),
   LivePanel: { subscribe() {} },
-  Thumbnails: { decorate() {}, sync() {}, configure() {} },
+  Thumbnails: {
+    enabled: true,
+    decorate() {},
+    sync() {},
+    configure() {},
+    onChange() {},
+    setEnabled() {},
+  },
   console,
   URLSearchParams,
   Intl,

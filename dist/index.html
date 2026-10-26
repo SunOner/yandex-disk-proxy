@@ -55,12 +55,6 @@
           >Requests &amp; logs ↗</span
         ></a
       >
-      <a class="nav" href="/recovery" target="_blank" rel="noopener"
-        ><span>↓</span>
-        <span class="i18n-text" data-i18n="Прямые загрузки ↗"
-          >Direct downloads ↗</span
-        ></a
-      >
       <a
         class="nav monitoring-link"
         href="/monitoring"
@@ -70,7 +64,8 @@
         ><span class="i18n-text" data-i18n="Мониторинг ↗">Monitoring ↗</span></a
       >
       <a class="nav" href="/settings" target="_blank" rel="noopener"
-        ><span>⚙</span><span data-i18n="Настройки ↗">Settings ↗</span></a
+        ><span>⚙</span
+        ><span class="i18n-text" data-i18n="Настройки ↗">Settings ↗</span></a
       >
       <div class="locale-switcher" data-language-picker></div>
     </aside>
@@ -142,25 +137,6 @@
           </button>
         </div>
       </section>
-      <div id="tls-warning" class="tls-warning" hidden>
-        <span id="tls-message"></span>
-        <button
-          id="repair-ca"
-          class="button"
-          hidden
-          data-i18n="Восстановить доверие"
-        >
-          Repair certificate
-        </button>
-        <button
-          id="restart-client"
-          class="button"
-          hidden
-          data-i18n="Перезапустить Диск"
-        >
-          Restart Disk
-        </button>
-      </div>
       <section class="metrics">
         <article>
           <span data-i18n="ОСТАЛОСЬ СКАЧАТЬ">LEFT TO DOWNLOAD</span
@@ -175,14 +151,86 @@
           ><strong id="metric-downloaded">—</strong>
         </article>
         <article class="metric-error">
+          <button
+            id="reset-errors"
+            disabled
+            class="metric-action"
+            type="button"
+            aria-label="Reset HTTP 500 counter"
+            title="Reset HTTP 500 counter"
+            data-i18n-aria-label="Сбросить счётчик HTTP 500"
+            data-i18n-title="Сбросить счётчик HTTP 500"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="15"
+              height="15"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 10a8 8 0 1 0 2-5M3 3v5h5" />
+            </svg>
+          </button>
           <span data-i18n="ОТВЕТЫ 500">HTTP 500 RESPONSES</span
           ><strong id="metric-errors">0</strong>
         </article>
         <article class="metric-deferred">
+          <button
+            id="reset-deferred"
+            disabled
+            class="metric-action"
+            type="button"
+            aria-label="Retry deferred files"
+            title="Retry deferred files"
+            data-i18n-aria-label="Повторить загрузку отложенных файлов"
+            data-i18n-title="Повторить загрузку отложенных файлов"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="15"
+              height="15"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 10a8 8 0 1 0 2-5M3 3v5h5" />
+            </svg>
+          </button>
           <span data-i18n="ОТЛОЖЕНО">DEFERRED</span
           ><strong id="metric-deferred">0</strong>
         </article>
         <article>
+          <button
+            id="reset-network"
+            disabled
+            class="metric-action"
+            type="button"
+            aria-label="Reset traffic counter"
+            title="Reset traffic counter"
+            data-i18n-aria-label="Сбросить счётчик трафика"
+            data-i18n-title="Сбросить счётчик трафика"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="15"
+              height="15"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 10a8 8 0 1 0 2-5M3 3v5h5" />
+            </svg>
+          </button>
           <span data-i18n="ПЕРЕДАНО ПО СЕТИ">NETWORK TRAFFIC</span
           ><strong id="metric-network" data-i18n-once="0 Б">0 B</strong>
         </article>
@@ -202,6 +250,33 @@
               </p>
             </div>
             <div class="table-tools">
+              <button
+                id="toggle-thumbnails"
+                class="preview-toggle"
+                type="button"
+                aria-pressed="true"
+                aria-label="File previews"
+                data-i18n-aria-label="Превью файлов"
+                title="Hide file previews"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  width="18"
+                  height="18"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="3" width="18" height="18" rx="3" />
+                  <circle cx="8" cy="8" r="1.5" />
+                  <path d="m4 17 5-5 4 4 3-3 4 4" />
+                  <path class="preview-off-mark" d="m2 2 20 20" />
+                </svg>
+                <span data-i18n="Превью">Previews</span>
+              </button>
               <label class="search"
                 ><span>⌕</span
                 ><input
@@ -419,7 +494,8 @@
       <div class="eyebrow" data-i18n="ПОДКЛЮЧЕНИЕ HTTPS">HTTPS CONNECTION</div>
       <h2 data-i18n="Сертификат прокси">Proxy certificate</h2>
       <p
-        class="dialog-intro" id="certificate-consent-intro"
+        class="dialog-intro"
+        id="certificate-consent-intro"
         data-i18n="Прокси временно добавит сертификат в доверенные корневые сертификаты текущего пользователя Windows. Ему смогут доверять и другие приложения. Добавленный прокси сертификат удаляется при остановке."
       >
         The proxy temporarily adds its certificate to the current Windows user's
@@ -440,9 +516,11 @@
       </div>
       <label class="consent-check"
         ><input id="consent-checkbox" type="checkbox" /><span
-          class="i18n-text" id="certificate-consent-label"
+          class="i18n-text"
+          id="certificate-consent-label"
           data-i18n="Разрешаю временно добавить этот сертификат в доверенные корневые сертификаты моего пользователя Windows."
-          >Allow temporarily adding this certificate to my Windows user's trusted roots.</span
+          >Allow temporarily adding this certificate to my Windows user's
+          trusted roots.</span
         ></label
       >
       <p id="consent-error" class="dialog-error" role="alert" hidden></p>

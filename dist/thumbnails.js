@@ -6,7 +6,9 @@ const Thumbnails = (() => {
     ),
   );
   const frames = new Map();
+  const listeners = new Set();
   let nonce = "",
+    enabled = I18n.preferences.get("thumbnails", true),
     context = "",
     available = false,
     generation = 0,
@@ -24,6 +26,7 @@ const Thumbnails = (() => {
     for (const entry of frames.values()) {
       entry.controller?.abort();
       release(entry);
+      entry.node.title = "";
       observer?.unobserve(entry.node);
     }
     frames.clear();
@@ -104,7 +107,14 @@ const Thumbnails = (() => {
     }
   }
   function pump() {
-    if (!observer || !available || !nonce || !context || document.hidden)
+    if (
+      !enabled ||
+      !observer ||
+      !available ||
+      !nonce ||
+      !context ||
+      document.hidden
+    )
       return;
     for (const entry of frames.values()) {
       if (active >= 2) break;
@@ -148,11 +158,13 @@ const Thumbnails = (() => {
     node.classList.add("thumbnail-frame");
   }
   function sync(container) {
+    if (!enabled) return;
     for (const [node, entry] of frames) {
       if (
         !node.isConnected ||
         entry.key !== node.getAttribute("data-thumbnail")
       ) {
+        entry.controller?.abort();
         release(entry);
         observer?.unobserve(node);
         frames.delete(node);
@@ -182,10 +194,17 @@ const Thumbnails = (() => {
     }
     nonce = state.nonce || "";
     available = !!(
-      state.recovery?.credentials_seen || state.recovery?.account_verified
+      state.preview?.credentials_seen || state.preview?.account_verified
     );
     pump();
   }
+  I18n.preferences.onChange((key, value) => {
+    if (key !== "thumbnails" || enabled === (value !== false)) return;
+    enabled = value !== false;
+    reset();
+    if (enabled) sync(document);
+    listeners.forEach((listener) => listener(enabled));
+  });
   document.addEventListener("visibilitychange", () => {
     for (const entry of frames.values()) {
       if (document.hidden) {
@@ -200,5 +219,18 @@ const Thumbnails = (() => {
   window.addEventListener("pagehide", reset);
   window.addEventListener("pageshow", () => sync(document));
   setInterval(pump, 3000);
-  return { decorate, sync, configure };
+  return {
+    decorate,
+    sync,
+    configure,
+    get enabled() {
+      return enabled;
+    },
+    setEnabled(value) {
+      I18n.preferences.set("thumbnails", !!value);
+    },
+    onChange(listener) {
+      listeners.add(listener);
+    },
+  };
 })();

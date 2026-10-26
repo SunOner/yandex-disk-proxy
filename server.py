@@ -2,6 +2,7 @@
 
 import argparse
 import collections
+import copy
 import hashlib
 import hmac
 import json
@@ -27,11 +28,11 @@ import windows_ui
 import winops
 from diagnostics import JsonLog, Traffic, redact_text
 from downloads import History
-from fetcher import DownloadError, Recovery
 from inventory import scan
 from metrics import INTERVAL as STATS_INTERVAL
 from metrics import Metrics
 from operations import ANOMALIES, LABELS
+from preview_client import PreviewError, PreviewSession
 from thumbnails import Thumbnails, Unavailable
 from updates import TOPICS, Updates
 from winops import (
@@ -83,6 +84,7 @@ class Model:
         self.mode = settings.read().get("mode", "defer")
         self.threshold = 1
         self.cooldown = 300
+        self.last_deferred_retry = 0
         self.worker = None
         self.directory = None
         self.control = {}
@@ -97,8 +99,11 @@ class Model:
         self.inventory_lock = threading.RLock()
         self.inventory_wake = threading.Event()
         self.inventory = {"scanning": False, "updated_at": None, "interval_seconds": 10}
-        self.refresh_inventory()
-        self.init_recovery()
+        try:
+            self.refresh_inventory()
+        except (OSError, ValueError) as exc:
+            self.log("inventory_error", "Не удалось обновить список файлов", reason=str(exc))
+        self.init_previews()
         self.metrics = None
         self.metrics_error = None
         self.statistics_wake = threading.Event()
@@ -120,17 +125,6 @@ class Model:
             if self.metrics is None:
                 return
             native = self.downloads.summary()
-            with self.recovery.lock:
-                direct = self.recovery.summary()
-                direct_history = (
-                    [
-                        {"size": row.get("size"), "updated": row.get("updated")}
-                        for row in self.recovery.jobs.values()
-                        if row["status"] == "verified"
-                    ]
-                    if not self.metrics.imported
-                    else []
-                )
             counts = collections.Counter(row["status"] for row in self.files.values())
             current = {
                 "pending_files": len(self.files) - counts["local"],
@@ -147,8 +141,6 @@ class Model:
                 {
                     "native_files": native["count"],
                     "native_bytes": native["bytes"],
-                    "direct_files": direct["verified"],
-                    "direct_bytes": direct["verified_bytes"],
                 },
                 self.counters,
                 operations,
@@ -158,9 +150,7 @@ class Model:
             )
             self.stats_sample_at = now
             if not self.metrics.imported:
-                self.metrics.import_downloads(
-                    self.downloads.data["completed"].values(), direct_history
-                )
+                self.metrics.import_downloads(self.downloads.data["completed"].values())
             self.metrics_error = None
         self.updates.changed("metrics")
 
@@ -176,27 +166,24 @@ class Model:
                 self.metrics_error = str(exc)
                 self.updates.changed("metrics")
 
-    def recovery_rows(self, rel):
+    def preview_rows(self, rel):
         with self.lock:
-            if rel is None:
-                return sorted(self.files, key=lambda p: self.files[p]["size"])
             row = self.files.get(rel)
             return row.copy() if row else None
 
-    def init_recovery(self):
+    def init_previews(self):
         if hasattr(self, "thumbnails"):
             self.thumbnails.close()
-        self.recovery = Recovery(
+            self.preview_session.close()
+        self.preview_session = PreviewSession(
             ROOT,
-            RUNTIME / "recovery" / file_id(str(ROOT)),
-            self.recovery_rows,
-            info,
+            self.preview_rows,
             lambda kind, **values: self.event({"event": kind, **values}),
-            changed=lambda: self.updates.changed("state", "recovery"),
+            changed=lambda: self.updates.changed("state"),
         )
         self.thumbnails = Thumbnails(
-            self.recovery,
-            self.recovery_rows,
+            self.preview_session,
+            self.preview_rows,
             lambda kind, **values: self.event({"event": kind, **values}),
         )
         self.preview_context = secrets.token_urlsafe(12)
@@ -320,7 +307,7 @@ class Model:
                         )
                     )
                     self.files.pop(rel)
-                    self.downloads.pending.pop(rel, None)
+                    self.downloads.forget_pending(rel)
                 if metadata or removed:
                     self.downloads.save()
                 self.inventory.update(
@@ -342,8 +329,6 @@ class Model:
                         unavailable=len(result.unavailable),
                     )
                 self.inventory["first"] = True
-            if hasattr(self, "recovery"):
-                self.recovery.cancel_paths(removed)
             for operation, rel, details in activities:
                 self.file_activity(operation, rel, **details)
         except (OSError, ValueError) as exc:
@@ -576,7 +561,7 @@ class Model:
             self.save_control()
             self.log("stop_requested", "Остановка и восстановление обычного клиента")
 
-    def command(self, action, rel):
+    def command(self, action, rel, *, save=True):
         if rel not in self.files:
             raise ValueError("Файла нет в списке хранения на ПК")
         if self.session().get("phase") != "active":
@@ -592,7 +577,8 @@ class Model:
                 )
         self.sequence += 1
         self.control["commands"].append({"seq": self.sequence, "action": action, "file": rel})
-        self.save_control()
+        if save:
+            self.save_control()
         if action == "defer":
             self.files[rel]["status"] = "deferring"
         else:
@@ -601,6 +587,41 @@ class Model:
             if row["status"] != "local":
                 row["restore_previous"] = row["status"]
                 row["status"] = "restoring"
+
+    def retry_all_deferred(self):
+        with self.lock:
+            if self.session().get("phase") != "active":
+                raise ValueError("Прокси выключен")
+            paths = [rel for rel, row in self.files.items() if row["status"] == "deferred"]
+            if not paths:
+                return 0
+            control, sequence = copy.deepcopy(self.control), self.sequence
+            rows = {rel: self.files[rel].copy() for rel in paths}
+            try:
+                for rel in paths:
+                    self.command("restore", rel, save=False)
+                self.save_control()
+            except (OSError, ValueError):
+                self.control, self.sequence = control, sequence
+                self.files.update(rows)
+                raise
+            self.log("retry", "Повторная попытка загрузки", count=len(paths))
+            return len(paths)
+
+    def reset_statistics(self, counter=None, revision=None):
+        with self.lock:
+            if self.metrics is None:
+                raise ValueError("Статистика недоступна")
+            if revision is not None:
+                self.metrics.undo_display_reset(revision)
+                result = {}
+            else:
+                result = {
+                    "revision": self.metrics.reset_display(counter, self.counters.get(counter, 0)),
+                    "context": file_id(str(ROOT or "unconfigured")),
+                }
+            self.updates.changed("state")
+            return result
 
     def set_mode(self, mode):
         if mode not in ("observe", "cooldown", "defer"):
@@ -625,6 +646,41 @@ class Model:
                 }[mode],
             )
 
+    def retry_deferred(self, now=None):
+        now = time.time() if now is None else now
+        with self.lock:
+            current = self.session()
+            if (
+                self.mode != "defer"
+                or current.get("phase") != "active"
+                or current.get("client_attached") is False
+                or now - self.last_deferred_retry < 60
+            ):
+                return
+            self.last_deferred_retry = now
+            due = []
+            initialized = False
+            for rel, row in self.files.items():
+                if row["status"] != "deferred":
+                    continue
+                retry = self.downloads.retries.get(rel)
+                if retry is None:
+                    self.downloads.deferred(rel, now, save=False)
+                    initialized = True
+                    continue
+                if retry["next_at"] <= now:
+                    due.append((retry["next_at"], rel))
+            if initialized:
+                self.downloads.save()
+            for _, rel in sorted(due)[:5]:
+                try:
+                    self.command("restore", rel)
+                    self.log("retry", "Повторная попытка загрузки", rel)
+                except (OSError, ValueError) as exc:
+                    self.downloads.retries[rel]["next_at"] = now + 300
+                    self.downloads.save()
+                    self.log("pin_error", "Не удалось повторить загрузку", rel, reason=str(exc))
+
     def event(self, event):
         try:
             self._event(event)
@@ -636,13 +692,55 @@ class Model:
                 if event.get("file"):
                     self.updates.changed("files")
 
+    def tls_response(self, record):
+        upstream = self.tls.get("upstream")
+        if (
+            not upstream
+            or upstream.get("ok") is not False
+            or record.get("type") != "http"
+            or record.get("phase") != "response"
+            or record.get("source") != "upstream"
+            or record.get("client") != "disk"
+            or record.get("route") != "proxy"
+            or not isinstance(record.get("url"), str)
+            or type(record.get("status")) is not int
+            or not 100 <= record["status"] <= 599
+        ):
+            return
+        error = upstream.get("error", "").lower()
+        if any(part in error for part in ("certificate", "unknown ca", "cert_verify")):
+            return
+        try:
+            url = urllib.parse.urlsplit(record.get("url", ""))
+            host = (url.hostname or "").lower().rstrip(".")
+        except ValueError:
+            return
+        if (
+            url.scheme != "https"
+            or not host
+            or host != upstream.get("host", "").lower().rstrip(".")
+        ):
+            return
+        # A fresh HTTPS response, including HTTP 500, proves this host's TLS works.
+        # Keep the failed handshake in diagnostics; certificate failures require a new handshake.
+        self.tls["upstream"] = {
+            "ok": True,
+            "at": time.time(),
+            "host": host,
+            "error": "",
+            "via": "https_response",
+        }
+
     def _event(self, event):
         with self.lock:
             kind = event.get("event")
             if kind == "traffic":
+                record = event.get("record") or {}
+                if isinstance(record, dict):
+                    self.tls_response(record)
                 try:
-                    self.counters["network_bytes"] += self.traffic.add(event.get("record")) or 0
-                    self.recovery.observe(event.get("record") or {})
+                    self.counters["network_bytes"] += self.traffic.add(record) or 0
+                    self.preview_session.observe(record)
                 except OSError as exc:
                     self.log_error = "Не удалось записать запросы: " + type(exc).__name__
                 return
@@ -662,17 +760,7 @@ class Model:
             if rel and row is None:
                 self.counters["unmatched"] += 1
                 return
-            if kind in ("recovery_verified", "recovery_error"):
-                self.log(
-                    kind,
-                    "Прямая загрузка проверена"
-                    if kind == "recovery_verified"
-                    else "Прямая загрузка: повтор или ошибка",
-                    rel,
-                    reason=event.get("reason", ""),
-                    bytes=event.get("bytes", 0),
-                )
-            elif kind == "api_health":
+            if kind == "api_health":
                 self.counters["api_success"] += 1
             elif kind in ("tls_error", "tls_ok"):
                 side = event.get("side", "client")
@@ -781,8 +869,16 @@ class Model:
                 if row["status"] not in ("restoring", "local"):
                     row["status"] = "deferred"
                 row["cooldown_until"] = time.time() + self.cooldown
+                self.downloads.deferred(rel)
                 self.log("deferred", "Файл отложен", rel)
             elif kind == "restored":
+                if event.get("missing"):
+                    self.files.pop(rel, None)
+                    self.downloads.forget_pending(rel)
+                    self.downloads.save()
+                    self.inventory_wake.set()
+                    self.log("restored", "Пропущен отсутствующий файл", rel)
+                    return
                 if row["status"] != "local":
                     row["status"] = "waiting"
                 row.pop("restore_previous", None)
@@ -872,6 +968,10 @@ class Model:
         last_session = None
         while not self.closed:
             time.sleep(3)
+            try:
+                self.retry_deferred()
+            except (OSError, ValueError) as exc:
+                self.log("pin_error", "Не удалось повторить загрузку", reason=str(exc))
             try:
                 self.traffic.flush()
             except OSError as exc:
@@ -981,9 +1081,12 @@ class Model:
                 ),
                 "downloads": self.downloads.summary(),
                 "inventory": dict(self.inventory),
-                "recovery": self.recovery.summary(),
+                "preview": self.preview_session.summary(),
                 "network": self.traffic.summary(),
                 "counters": dict(self.counters),
+                "display_counters": self.metrics.displayed(self.counters)
+                if self.metrics
+                else dict(self.counters),
                 "events": list(self.events)[:30],
                 "cleanup": self.latest_cleanup,
                 "certificate_thumbprint": THUMB,
@@ -1207,27 +1310,6 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/files":
             self.reply(200, ACTIVE.selected_files(urllib.parse.parse_qs(u.query)))
             return
-        if u.path == "/api/recovery":
-            query = urllib.parse.parse_qs(u.query)
-            try:
-                offset = int(query.get("offset", ["0"])[0])
-            except ValueError:
-                offset = 0
-            self.reply(200, ACTIVE.recovery.snapshot(query.get("q", [""])[0], offset))
-            return
-        if u.path.startswith("/browser-download/"):
-            try:
-                link = ACTIVE.recovery.take_ticket(u.path.removeprefix("/browser-download/"))
-            except ValueError as exc:
-                self.reply(410, {"error": str(exc)})
-                return
-            self.send_response(302)
-            self.send_header("Location", link)
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Referrer-Policy", "no-referrer")
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-            return
         if u.path == "/api/requests":
             query = urllib.parse.parse_qs(u.query)
             try:
@@ -1277,9 +1359,6 @@ class Handler(BaseHTTPRequestHandler):
             "/requests": ("requests.html", "text/html; charset=utf-8"),
             "/requests.js": ("requests.js", "text/javascript; charset=utf-8"),
             "/requests.css": ("requests.css", "text/css; charset=utf-8"),
-            "/recovery": ("recovery.html", "text/html; charset=utf-8"),
-            "/recovery.js": ("recovery.js", "text/javascript; charset=utf-8"),
-            "/recovery.css": ("recovery.css", "text/css; charset=utf-8"),
             "/monitoring": ("monitoring.html", "text/html; charset=utf-8"),
             "/monitoring.js": ("monitoring.js", "text/javascript; charset=utf-8"),
             "/monitoring.css": ("monitoring.css", "text/css; charset=utf-8"),
@@ -1361,11 +1440,6 @@ class Handler(BaseHTTPRequestHandler):
                 with ACTIVE.inventory_lock, ACTIVE.lock:
                     if ACTIVE.session().get("phase") not in ("idle", "stopped"):
                         raise ValueError("Сначала остановите прокси и завершите восстановление")
-                    if any(
-                        ACTIVE.recovery.summary()["counts"].get(k, 0)
-                        for k in ("queued", "fetching", "downloading", "retry", "waiting_session")
-                    ):
-                        raise ValueError("Сначала остановите прямые загрузки")
                     next_root, next_client = settings.save(
                         data.get("root", ""), data.get("client", "")
                     )
@@ -1388,8 +1462,7 @@ class Handler(BaseHTTPRequestHandler):
                         "updated_at": None,
                         "interval_seconds": 10,
                     }
-                    ACTIVE.recovery.close()
-                    ACTIVE.init_recovery()
+                    ACTIVE.init_previews()
                     ACTIVE.init_statistics()
                     # Saving paths must not wait for the first full directory scan.
                     ACTIVE.inventory_wake.set()
@@ -1416,20 +1489,22 @@ class Handler(BaseHTTPRequestHandler):
                 return
             elif self.path == "/api/rescan":
                 ACTIVE.inventory_wake.set()
-            elif self.path == "/api/recovery/enqueue":
-                ACTIVE.recovery.enqueue(data.get("file", ""), data.get("url"))
-            elif self.path == "/api/recovery/batch":
-                self.reply(200, {"queued": ACTIVE.recovery.batch()})
+            elif self.path == "/api/statistics/reset":
+                self.reply(
+                    200, {"ok": True, **ACTIVE.reset_statistics(counter=data.get("counter"))}
+                )
                 return
-            elif self.path == "/api/recovery/control":
-                ACTIVE.recovery.control(data.get("action"), data.get("file"))
-            elif self.path == "/api/recovery/browser":
-                ticket = ACTIVE.recovery.browser_ticket(data.get("file", ""))
-                self.reply(200, {"url": "/browser-download/" + ticket})
+            elif self.path == "/api/statistics/undo":
+                if type(data.get("revision")) is not int:
+                    raise ValueError("Укажите сброс для отмены")
+                if data.get("context") != file_id(str(ROOT or "unconfigured")):
+                    raise ValueError("Этот сброс уже нельзя отменить")
+                self.reply(200, {"ok": True, **ACTIVE.reset_statistics(revision=data["revision"])})
                 return
-            elif self.path == "/api/recovery/folder":
-                ACTIVE.recovery.target.mkdir(parents=True, exist_ok=True)
-                runtime.external_popen(["explorer.exe", str(ACTIVE.recovery.target)])
+            elif self.path == "/api/statistics/retry-deferred":
+                self.reply(200, {"ok": True, "queued": ACTIVE.retry_all_deferred()})
+                ACTIVE.updates.changed("state", "files")
+                return
             elif self.path in ("/api/repair-ca", "/api/restart-client"):
                 ACTIVE.worker_action(
                     "repair_ca" if self.path.endswith("repair-ca") else "restart_client"
@@ -1477,9 +1552,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(404, {"error": "Not found"})
                 return
             if not internal:
-                ACTIVE.updates.changed("state", "files", "recovery")
+                ACTIVE.updates.changed("state", "files")
             self.reply(200, {"ok": True})
-        except (ValueError, TypeError, OSError, DownloadError) as exc:
+        except (ValueError, TypeError, OSError, sqlite3.Error, PreviewError) as exc:
             ACTIVE.log("action_error", "Действие не выполнено: " + self.path, reason=str(exc))
             self.reply(400, {"error": str(exc)[:180]})
 
@@ -1532,14 +1607,19 @@ def main():
     if not args.no_browser:
         webbrowser.open(URL)
     if not args.no_mitm and settings.read().get("enabled") and settings.certificate_approved():
-        ACTIVE.start()
+        try:
+            ACTIVE.start()
+        except (OSError, ValueError, RuntimeError) as exc:
+            ACTIVE.log(
+                "session_error", "Не удалось автоматически запустить прокси", detail=str(exc)
+            )
     try:
         server.serve_forever(poll_interval=0.3)
     except KeyboardInterrupt:
         pass
     finally:
         ACTIVE.thumbnails.close()
-        ACTIVE.recovery.close()
+        ACTIVE.preview_session.close()
         if ACTIVE.certificate_thread:
             ACTIVE.certificate_thread.join(timeout=60)
         try:

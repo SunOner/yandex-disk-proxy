@@ -36,6 +36,7 @@ from winops import (
     launch_client,
     process_image,
     recover_session,
+    restore_pin,
     set_pin,
     stop_exact,
 )
@@ -46,6 +47,35 @@ def validate_client_certificate():
         raise ValueError("Подтвердите сертификат Диска в панели")
     if settings.fingerprint(CA_DIR) != THUMB:
         raise ValueError("Сертификат Диска изменился после подтверждения")
+
+
+class ClientWatchdog:
+    """Allow a short process handoff and cap reconnections to three per five minutes."""
+
+    def __init__(self):
+        self.missing_since = None
+        self.attempts = []
+
+    def check(self, state, now):
+        attached = (
+            bool(state.get("client_pid"))
+            and process_image(state["client_pid"]) == CLIENT
+            and state.get("client_created") is not None
+            and created_ticks(state["client_pid"]) == state["client_created"]
+        )
+        if attached:
+            self.missing_since = None
+            return "attached"
+        if self.missing_since is None:
+            self.missing_since = now
+        self.attempts = [value for value in self.attempts if now - value < 300]
+        if now - self.missing_since < 5:
+            return "waiting"
+        if len(self.attempts) >= 3:
+            return "limited"
+        self.attempts.append(now)
+        self.missing_since = now
+        return "reconnect"
 
 
 def main():
@@ -82,6 +112,7 @@ def main():
 
     def record(**changes):
         state.update(changes)
+        state["heartbeat_at"] = time.time()
         atomic(state_path, state)
 
     def event(kind, **fields):
@@ -110,10 +141,10 @@ def main():
         if not item:
             event("restored", file=rel)
             return
-        set_pin(rel, item["original_pin"], item["before"])
+        restored = restore_pin(rel, item)
         del ledger[rel]
         atomic(ledger_path, ledger)
-        event("restored", file=rel)
+        event("restored", file=rel, missing=not restored)
 
     def ensure_trust():
         validate_client_certificate()
@@ -218,6 +249,8 @@ def main():
             client_created=created_ticks(client.pid),
             phase="active",
             certificate_ready=True,
+            client_attached=True,
+            client_connected_at=time.time(),
         )
         event("session_active")
         last_sequence = 0
@@ -227,6 +260,8 @@ def main():
         cached_control = {}
         handled_actions = {"repair_ca": 0, "restart_client": 0}
         restarts = []
+        watchdog = ClientWatchdog()
+        last_client_check = 0
         while True:
             if k.WaitForSingleObject(parent_handle, 0) != 258:
                 break
@@ -261,10 +296,39 @@ def main():
                         client_pid=client.pid,
                         client_created=created_ticks(client.pid),
                         certificate_ready=True,
+                        client_attached=True,
+                        client_connected_at=time.time(),
                     )
+                    watchdog.missing_since = None
+                    watchdog.attempts.clear()
                     event("client_restarted")
                 except Exception as exc:
                     event("proxy_log", message=redact_text(str(exc)))
+            if time.monotonic() - last_client_check >= 5:
+                last_client_check = time.monotonic()
+                connection = watchdog.check(state, last_client_check)
+                previous_connection = state.get("client_connection")
+                record(client_attached=connection == "attached", client_connection=connection)
+                if connection == "limited" and previous_connection != "limited":
+                    event(
+                        "proxy_log",
+                        message="Переподключение Диска приостановлено после трёх попыток",
+                    )
+                if connection == "reconnect":
+                    try:
+                        ensure_trust()
+                        for pid in client_pids():
+                            stop_exact(pid, CLIENT)
+                        client = launch_client(True)
+                        record(
+                            client_pid=client.pid,
+                            client_created=created_ticks(client.pid),
+                            client_attached=True,
+                            client_connected_at=time.time(),
+                        )
+                        event("client_restarted")
+                    except (OSError, ValueError) as exc:
+                        event("proxy_log", message=redact_text(str(exc)))
             for command in control.get("commands", []):
                 if command["seq"] <= last_sequence:
                     continue

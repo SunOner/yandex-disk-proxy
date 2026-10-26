@@ -31,13 +31,9 @@ The panel tracks files marked **Keep on this computer**.
 
 Partially downloaded and modified files are not deferred. Switching out of deferral mode or stopping the proxy restores the original flags. The proxy cannot recover data that Yandex servers do not return.
 
+Deferred files are retried in small batches, starting after 30 minutes. Repeated failures increase the interval up to six hours.
+
 **Requests & logs** shows request details and errors. **Monitoring** shows download and network history; statistics survive restarts.
-
-## Direct downloads
-
-Use **Download…** beside a file or open **Direct downloads** to try a fresh Yandex link, an existing URL or a browser download.
-
-The direct queue saves verified files to `%USERPROFILE%\Downloads\Yandex-Recovery\<Disk folder>`. These files are separate from the sync folder and are counted separately from client downloads. A direct link may also fail if the server cannot return the file.
 
 ## Stop and recover
 

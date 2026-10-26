@@ -7,7 +7,7 @@ import time
 import urllib.parse
 from pathlib import PurePosixPath
 
-from fetcher import DownloadError, Transport, relative
+from preview_client import PreviewError, Transport, relative
 
 EXTENSIONS = frozenset(
     "jpg jpeg png gif bmp webp tif tiff heic heif avif mp4 mov m4v avi mkv webm 3gp pdf".split()
@@ -37,8 +37,8 @@ def raster(data, kind):
 
 
 class Thumbnails:
-    def __init__(self, recovery, rows, emit):
-        self.recovery, self.rows = recovery, rows
+    def __init__(self, session, rows, emit):
+        self.session, self.rows = session, rows
         self.transport = Transport(emit, client="preview", timeout=6)
         self.lock = threading.RLock()
         self.slots = threading.BoundedSemaphore(2)
@@ -83,7 +83,7 @@ class Thumbnails:
             self.pending.add(key)
         auth = None
         try:
-            auth = self.recovery.authorization()
+            auth = self.session.authorization()
             meta = self.transport.json(
                 "/resources?"
                 + urllib.parse.urlencode(
@@ -125,11 +125,11 @@ class Thumbnails:
             result = (data, kind)
             self.store(key, result, TTL)
             return result
-        except DownloadError as exc:
+        except PreviewError as exc:
             if exc.code == 401:
-                with self.recovery.lock:
-                    if auth is not None and self.recovery.auth == auth:
-                        self.recovery.auth = None
+                with self.session.lock:
+                    if auth is not None and self.session.auth == auth:
+                        self.session.auth = None
                 with self.lock:
                     self.blocked_until = time.monotonic() + 15
                 raise Unavailable(503, 15) from None

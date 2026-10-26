@@ -6,8 +6,10 @@ const root = path.resolve(__dirname, "..");
 let now = 0,
   sequence = 0,
   reduced = false,
-  animations = [];
+  animations = [],
+  cancelled = 0;
 const timers = new Map();
+const documentEvents = {};
 function node() {
   const value = {
     children: [],
@@ -34,7 +36,12 @@ function node() {
     },
     animate(frames, options) {
       animations.push({ frames, options });
-      return { finished: Promise.resolve() };
+      return {
+        finished: Promise.resolve(),
+        cancel() {
+          cancelled++;
+        },
+      };
     },
   };
   return value;
@@ -53,6 +60,10 @@ const context = vm.createContext({
     timers.delete(id);
   },
   document: {
+    hidden: false,
+    addEventListener(name, handler) {
+      documentEvents[name] = handler;
+    },
     createElement: node,
     getElementById(id) {
       assert.equal(id, "toast-stack");
@@ -83,7 +94,7 @@ async function advance(ms) {
   now = end;
 }
 async function main() {
-  for (const name of ["index", "requests", "recovery"]) {
+  for (const name of ["index", "requests"]) {
     const html = fs.readFileSync(path.join(root, `dist/${name}.html`), "utf8");
     assert.ok(html.includes('id="toast-stack"'));
     assert.ok(
@@ -124,6 +135,36 @@ async function main() {
     "Remaining lifetime resumes, rather than resetting",
   );
   assert.equal(animations.length, 2, "Exit is animated");
+  const beforeCancel = cancelled;
+  context.getComputedStyle = () => ({
+    opacity: "0.24",
+    transform: "matrix(0.985, 0, 0, 0.985, 0, 0)",
+  });
+  const rapid = toast.show("Closing during entry", { key: "rapid" });
+  const rapidCard = host.children[0];
+  toast.dismiss(rapid);
+  assert.equal(cancelled, beforeCancel + 1, "Entry stops before exit starts");
+  assert.equal(
+    animations.at(-1).frames[0].opacity,
+    "0.24",
+    "Closing during entry keeps the current opacity instead of flashing fully visible",
+  );
+  assert.equal(rapidCard.inert, true, "Exiting controls cannot receive input");
+  assert.notEqual(
+    rapidCard.children[2].disabled,
+    true,
+    "Closing preserves button styling during the fade",
+  );
+  delete context.getComputedStyle;
+  toast.show("Replacement", { key: "rapid" });
+  rapidCard.children[2].listeners.click();
+  await tick();
+  assert.equal(
+    host.children.length,
+    1,
+    "A leaving close button cannot close its replacement",
+  );
+  toast.dismiss("rapid", true);
 
   toast.problem("poll", "Сервер недоступен");
   assert.equal(host.children[0].attributes.role, "alert");
@@ -143,6 +184,122 @@ async function main() {
   toast.problem("poll", "Другая ошибка");
   assert.equal(host.children.length, 1, "New outage after recovery is shown");
   toast.dismiss("poll", true);
+  const repairOptions = () => ({
+    action: { label: "Repair", onClick() {} },
+  });
+  toast.problem("tls", "Certificate missing", repairOptions());
+  const repairCard = host.children[0];
+  assert.equal(repairCard.children[1].children[2].textContent, "Repair");
+  for (let i = 0; i < 50; i++)
+    toast.problem("tls", "Certificate missing", repairOptions());
+  assert.equal(
+    host.children[0],
+    repairCard,
+    "Polling does not replace or animate an unchanged actionable error",
+  );
+  repairCard.children[2].listeners.click();
+  await tick();
+  toast.problem("tls", "Certificate missing", repairOptions());
+  assert.equal(host.children.length, 0, "Dismissed repair prompts stay quiet");
+  toast.problem("tls", "");
+  toast.problem("tls", "Certificate missing", repairOptions());
+  assert.equal(host.children.length, 1);
+  toast.problem("tls", "Certificate missing", {
+    action: { label: "Restart", onClick() {} },
+  });
+  assert.equal(
+    host.children.length,
+    1,
+    "Changed actions replace the old prompt",
+  );
+  assert.equal(host.children[0].children[1].children[2].textContent, "Restart");
+  toast.problem("tls", "");
+  await tick();
+  assert.equal(host.children.length, 0, "Recovered TLS clears its prompt");
+  const upstreamOptions = { delay: 1000, cooldown: 5000, scope: "session-a" };
+  toast.problem("upstream", "TLS connection closed", upstreamOptions);
+  await advance(900);
+  for (let i = 0; i < 50; i++)
+    toast.problem("upstream", "TLS connection closed", upstreamOptions);
+  toast.problem("upstream", "");
+  await advance(100);
+  assert.equal(
+    host.children.length,
+    0,
+    "A recovered transient error never flashes a toast",
+  );
+  toast.problem("upstream", "TLS connection closed", upstreamOptions);
+  await advance(999);
+  assert.equal(host.children.length, 0);
+  await advance(1);
+  assert.equal(
+    host.children.length,
+    1,
+    "A persistent failure is still reported",
+  );
+  toast.problem("upstream", "");
+  await tick();
+  toast.problem("upstream", "TLS connection closed", upstreamOptions);
+  await advance(4999);
+  assert.equal(
+    host.children.length,
+    0,
+    "Recovery/failure flapping respects the cooldown",
+  );
+  await advance(1);
+  assert.equal(
+    host.children.length,
+    1,
+    "An unresolved new outage is reported after cooldown",
+  );
+  toast.problem("upstream", "");
+  await tick();
+  toast.problem("upstream", "TLS connection closed", upstreamOptions);
+  toast.problem("upstream", "TLS connection closed", { scope: "session-a" });
+  assert.equal(
+    host.children.length,
+    1,
+    "Escalation to a certificate failure bypasses delay and cooldown",
+  );
+  toast.problem("upstream", "");
+  await tick();
+  toast.problem("upstream", "TLS connection closed", {
+    ...upstreamOptions,
+    scope: "session-b",
+  });
+  await advance(1000);
+  assert.equal(
+    host.children.length,
+    1,
+    "A restarted proxy has its own outage scope",
+  );
+  toast.problem("upstream", "");
+  await tick();
+  toast.problem("background", "TLS connection closed", upstreamOptions);
+  context.document.hidden = true;
+  documentEvents.visibilitychange();
+  await advance(1000);
+  assert.equal(
+    host.children.length,
+    0,
+    "Backgrounding cancels a stale pending alert",
+  );
+  context.document.hidden = false;
+  toast.problem("background", "TLS connection closed", upstreamOptions);
+  await advance(1000);
+  assert.equal(
+    host.children.length,
+    1,
+    "A fresh foreground state can report the failure",
+  );
+  toast.problem("background", "");
+  await tick();
+  await advance(5000);
+  assert.equal(
+    host.children.length,
+    0,
+    "Replaced and cancelled timers cannot resurrect alerts",
+  );
   for (let i = 0; i < 50; i++) toast.show(`Событие ${i}`);
   assert.equal(host.children.length, 3, "Stack is bounded");
   await advance(4500);
@@ -185,6 +342,56 @@ async function main() {
   await advance(4500);
   assert.equal(host.children.length, 0, "Fallback still expires");
   assert.equal(timers.size, 0, "Dismissal clears timers");
+  let finish,
+    calls = 0;
+  toast.show("Reset", {
+    key: "reset",
+    action: {
+      label: "Undo",
+      onClick() {
+        calls++;
+        return new Promise((resolve) => (finish = resolve));
+      },
+    },
+  });
+  const undoButton = host.children[0].children[1].children[2];
+  const undoing = undoButton.listeners.click();
+  assert.equal(undoButton.disabled, true);
+  await undoButton.listeners.click();
+  assert.equal(calls, 1, "Undo cannot be submitted twice");
+  toast.show("Reset", {
+    key: "reset",
+    action: { label: "Undo latest", onClick() {} },
+  });
+  assert.equal(
+    host.children[0].children[1].children[2].textContent,
+    "Undo latest",
+  );
+  finish();
+  await undoing;
+  assert.equal(
+    host.children.length,
+    1,
+    "An old completion cannot dismiss the newer undo action",
+  );
+  await host.children[0].children[1].children[2].listeners.click();
+  assert.equal(host.children.length, 0);
+  toast.problem("failed-action", "TLS error", {
+    action: {
+      label: "Restart",
+      async onClick() {
+        throw new Error("Restart failed");
+      },
+    },
+  });
+  const restartButton = host.children[0].children[1].children[2];
+  await restartButton.listeners.click();
+  assert.equal(restartButton.disabled, false, "A failed action can be retried");
+  assert.equal(host.children.length, 2, "Action failures show an error toast");
+  assert.equal(
+    host.children[1].children[1].children[1].textContent,
+    "Restart failed",
+  );
   console.log(
     "Toasts: animation, expiry, hover/focus, dismiss, deduplication, bounded stack, text safety, reduced motion and fallback passed.",
   );
